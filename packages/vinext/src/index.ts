@@ -3930,7 +3930,8 @@ export const loadServerActionClient = ${
       },
 
       load: {
-        filter: { id: /virtual:vinext-react-canary$/ },
+        // oxlint-disable-next-line no-control-regex -- null byte prefix is intentional (Vite virtual module convention)
+        filter: { id: /^\u0000virtual:vinext-react-canary$/ },
         handler(id) {
           if (id === "\0virtual:vinext-react-canary") {
             return [
