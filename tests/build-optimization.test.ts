@@ -2232,6 +2232,7 @@ describe("next/dynamic preload metadata transform", () => {
       `dynamic({ loader: () => import("./dynamic-widget"), ...overrides })`,
       `dynamic({ loader: () => import("./dynamic-widget"), ["loader"]: unsupportedLoader })`,
       `dynamic({ loader: () => import("./dynamic-widget"), loader: unsupportedLoader })`,
+      `dynamic({ modules: () => import("./dynamic-widget"), loader: { Widget: () => import("./dynamic-widget") } })`,
       `dynamic(() => import("./dynamic-widget"), { loader: unsupportedLoader })`,
       `dynamic(() => import("./dynamic-widget"), { ...overrides })`,
     ];

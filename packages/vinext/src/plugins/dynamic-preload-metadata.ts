@@ -387,10 +387,13 @@ function dynamicLoaderArgument(firstArg: ESTree.Argument | undefined): ESTree.Ar
 
   const loaderProperty = firstArg.properties.find(
     (property): property is ESTree.ObjectProperty =>
-      property.type === "Property" &&
-      (propertyKeyName(property) === "loader" || propertyKeyName(property) === "modules"),
+      property.type === "Property" && propertyKeyName(property) === "loader",
   );
-  return loaderProperty?.value;
+  const modulesProperty = firstArg.properties.find(
+    (property): property is ESTree.ObjectProperty =>
+      property.type === "Property" && propertyKeyName(property) === "modules",
+  );
+  return (loaderProperty ?? modulesProperty)?.value;
 }
 
 function hasUncertainObjectProperties(node: ESTree.Argument | undefined): boolean {
