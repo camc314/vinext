@@ -109,7 +109,7 @@ function findTsconfig(dir: string): string | null {
  */
 function resolveExtends(extendsValue: string, fromDir: string): string | null {
   if (typeof extendsValue !== "string") return null;
-  let resolved;
+  let resolved: string;
   if (extendsValue.startsWith(".")) {
     resolved = path.resolve(fromDir, extendsValue);
   } else {
