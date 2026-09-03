@@ -8,6 +8,7 @@
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
 import { createBuilder, parseAst } from "vite";
 import { augmentSsrManifestFromBundle as _augmentSsrManifestFromBundle } from "../packages/vinext/src/build/ssr-manifest.js";
@@ -1299,17 +1300,69 @@ describe("no-side-effect annotations", () => {
     }
   }, 15_000);
 
+  it("preserves an eager import when its unused dynamic call is tree-shaken", async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "vinext-dynamic-eager-dce-"));
+    const entryPath = path.join(tmpDir, "entry.js");
+    const widgetPath = path.join(tmpDir, "widget.js");
+    const outDir = path.join(tmpDir, "dist");
+    const source = [
+      `import dynamic from "next/dynamic";`,
+      `const Unused = dynamic(import("./widget.js"));`,
+      `globalThis.__entryMarker = true;`,
+    ].join("\n");
+    const transformed = await _transformNextDynamicPreloadMetadata(
+      source,
+      entryPath,
+      tmpDir,
+      async (specifier) => (specifier === "./widget.js" ? widgetPath : null),
+    );
+    expect(transformed?.code).toContain("/* @__PURE__ */ dynamic(import(");
+
+    await fsp.writeFile(
+      path.join(tmpDir, "dynamic.js"),
+      `export default function dynamic(loader) { globalThis.__dynamicCallMarker = loader; return loader; }\n`,
+    );
+    await fsp.writeFile(widgetPath, `globalThis.__widgetMarker = true;\n`);
+    await fsp.writeFile(entryPath, transformed!.code.replace(`"next/dynamic"`, `"./dynamic.js"`));
+
+    try {
+      const builder = await createBuilder({
+        root: tmpDir,
+        configFile: false,
+        logLevel: "silent",
+        build: {
+          outDir,
+          minify: false,
+          rolldownOptions: {
+            input: entryPath,
+            output: { entryFileNames: "entry.js", chunkFileNames: "[name].js" },
+          },
+        },
+      });
+      await builder.buildApp();
+
+      const entryOutput = await fsp.readFile(path.join(outDir, "entry.js"), "utf8");
+      expect(entryOutput).toContain("__entryMarker");
+      expect(entryOutput).not.toContain("__dynamicCallMarker");
+      expect(entryOutput).toContain("import(");
+
+      const widgetOutput = await fsp.readFile(path.join(outDir, "widget.js"), "utf8");
+      expect(widgetOutput).toContain("__widgetMarker");
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 15_000);
+
   it("tree-shakes unused script nonce hook setup", async () => {
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "vinext-script-nonce-dce-"));
     const entryPath = path.join(tmpDir, "entry.js");
     const outDir = path.join(tmpDir, "dist");
-    const scriptNonceContextPath = path.resolve(
-      import.meta.dirname,
-      "../packages/vinext/src/shims/script-nonce-context.tsx",
-    );
+    const scriptNonceContextUrl = pathToFileURL(
+      path.resolve(import.meta.dirname, "../packages/vinext/src/shims/script-nonce-context.tsx"),
+    ).href;
     await fsp.writeFile(
       entryPath,
-      `import { withScriptNonce } from ${JSON.stringify(scriptNonceContextPath)};\nglobalThis.__withScriptNonce = withScriptNonce;\n`,
+      `import { withScriptNonce } from ${JSON.stringify(scriptNonceContextUrl)};\nglobalThis.__withScriptNonce = withScriptNonce;\n`,
     );
 
     try {
@@ -2172,6 +2225,28 @@ describe("next/dynamic preload metadata transform", () => {
 
     expect(result?.code).not.toContain("__PURE__");
     expect(result?.code).toContain(`loadableGenerated: { modules: ["app/dynamic-widget.tsx"] }`);
+  });
+
+  it("does not mark dynamic calls with loader overrides as pure", async () => {
+    const calls = [
+      `dynamic({ loader: () => import("./dynamic-widget"), ...overrides })`,
+      `dynamic({ loader: () => import("./dynamic-widget"), ["loader"]: unsupportedLoader })`,
+      `dynamic({ loader: () => import("./dynamic-widget"), loader: unsupportedLoader })`,
+      `dynamic(() => import("./dynamic-widget"), { loader: unsupportedLoader })`,
+      `dynamic(() => import("./dynamic-widget"), { ...overrides })`,
+    ];
+
+    for (const call of calls) {
+      const result = await _transformNextDynamicPreloadMetadata(
+        [`import dynamic from "next/dynamic";`, `const Widget = ${call};`].join("\n"),
+        importer,
+        root,
+        resolveDynamicImport,
+      );
+
+      expect(result?.code).not.toContain("__PURE__");
+      expect(result?.code).toContain(`loadableGenerated: { modules: ["app/dynamic-widget.tsx"] }`);
+    }
   });
 
   it("preserves existing explicit loadableGenerated metadata", async () => {

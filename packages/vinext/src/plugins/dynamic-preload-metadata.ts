@@ -393,6 +393,21 @@ function dynamicLoaderArgument(firstArg: ESTree.Argument | undefined): ESTree.Ar
   return loaderProperty?.value;
 }
 
+function hasUncertainObjectProperties(node: ESTree.Argument | undefined): boolean {
+  if (node?.type !== "ObjectExpression") return false;
+
+  let loaderProperties = 0;
+  let modulesProperties = 0;
+  for (const property of node.properties) {
+    if (property.type === "SpreadElement" || property.computed) return true;
+    const name = propertyKeyName(property);
+    if (name === "loader") loaderProperties += 1;
+    if (name === "modules") modulesProperties += 1;
+  }
+
+  return loaderProperties > 1 || modulesProperties > 1;
+}
+
 function isFunctionOrImportLoader(node: ESTree.Argument | undefined): boolean {
   return (
     node?.type === "ArrowFunctionExpression" ||
@@ -417,8 +432,16 @@ function hasObjectAccessor(node: ESTree.Argument | undefined): boolean {
 function canAnnotateDynamicCallAsPure(callNode: AstCallExpression): boolean {
   const [firstArg, secondArg] = callNode.arguments;
   if (!isFunctionOrImportLoader(dynamicLoaderArgument(firstArg))) return false;
-  if (hasObjectAccessor(firstArg)) return false;
-  return secondArg === undefined || !hasObjectAccessor(secondArg);
+  if (hasObjectAccessor(firstArg) || hasUncertainObjectProperties(firstArg)) return false;
+  if (secondArg === undefined) return true;
+
+  // normalizeDynamicOptions() spreads the second argument over the first, so an
+  // unknown options object or a `loader` property can replace the loader proved
+  // safe above. In particular, replacing it with a loader map makes dynamic()
+  // throw; marking that call pure would let the bundler erase the validation.
+  if (secondArg.type !== "ObjectExpression") return false;
+  if (hasObjectAccessor(secondArg) || hasUncertainObjectProperties(secondArg)) return false;
+  return !hasObjectProperty(secondArg, "loader");
 }
 
 function annotateCallAsPure(
