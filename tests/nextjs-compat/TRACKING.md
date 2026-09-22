@@ -8,23 +8,22 @@ Ported from: https://github.com/vercel/next.js/tree/canary/test/e2e/app-dir
 **Local**: `tests/nextjs-compat/app-rendering.test.ts`
 **Fixtures**: `fixtures/app-basic/app/nextjs-compat/`
 
-| #   | Next.js Test                                             | Vinext Status | Notes                                                                                                                                                                      |
-| --- | -------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | should serve app/page.server.js at /                     | PASS          | Mapped to `/nextjs-compat` sub-route                                                                                                                                       |
-| 2   | SSR only: should run data in layout and page             | PASS          | `use(getData())` with `revalidate=0` works                                                                                                                                 |
-| 3   | SSR only: should run data fetch in parallel              | PASS          | Layout+page 1s delays complete in <3s (parallel confirmed)                                                                                                                 |
-| 4   | static only: should run data in layout and page          | PASS          | `use(getData())` with `revalidate=false` works                                                                                                                             |
-| 5   | static only: should run data in parallel                 | PASS          | Same parallel behavior confirmed                                                                                                                                           |
-| 6   | ISR: should render page with layout and page data        | PASS          | `revalidate=1` page renders with timestamps                                                                                                                                |
-| 7   | ISR: should produce different timestamps on revalidation | **SKIP**      | RSC module instances persist across requests in dev — `Date.now()` in `use(getData())` returns cached value. Needs investigation into RSC module re-execution per request. |
-| 8   | mixed static and dynamic                                 | SKIP (N/A)    | Also skipped in Next.js source                                                                                                                                             |
+| #   | Next.js Test                                             | Vinext Status | Notes                                                                  |
+| --- | -------------------------------------------------------- | ------------- | ---------------------------------------------------------------------- |
+| 1   | should serve app/page.server.js at /                     | PASS          | Mapped to `/nextjs-compat` sub-route                                   |
+| 2   | SSR only: should run data in layout and page             | PASS          | `use(getData())` with `revalidate=0` works                             |
+| 3   | SSR only: should run data fetch in parallel              | PASS          | Layout+page 1s delays complete in <3s (parallel confirmed)             |
+| 4   | static only: should run data in layout and page          | PASS          | `use(getData())` with `revalidate=false` works                         |
+| 5   | static only: should run data in parallel                 | PASS          | Same parallel behavior confirmed                                       |
+| 6   | ISR: should render page with layout and page data        | PASS          | `revalidate=1` page renders with timestamps                            |
+| 7   | ISR: should produce different timestamps on revalidation | PASS          | Verified fresh layout and page timestamps across development requests. |
+| 8   | mixed static and dynamic                                 | SKIP (N/A)    | Also skipped in Next.js source                                         |
 
-**Result: 6/8 pass, 1 skip (vinext issue), 1 skip (N/A)**
+**Result: 7/8 pass, 1 skip (N/A)**
 
 ### Findings
 
-- **React `use()` hook warning**: All pages using `use(getData())` emit "Invalid hook call" warnings in stderr. The data renders correctly, but there's likely a duplicate React instance in the RSC environment. Not blocking but should be investigated.
-- **RSC module caching**: The ISR timestamp test reveals that `Date.now()` inside an async function called via `use()` returns the same value across requests. The RSC module's function is not re-executed per request — the promise is cached at module scope. This affects any pattern that expects fresh data on each server render.
+- The previously skipped timestamp test now passes: `use(getData())` produces fresh layout and page timestamps across development requests. It is enabled again. This checks development rendering; production ISR caching requires separate coverage.
 
 ---
 
@@ -62,7 +61,7 @@ Ported from: https://github.com/vercel/next.js/tree/canary/test/e2e/app-dir
 
 | Chunk            | Tests | Pass | Skip | N/A | Fail | Status |
 | ---------------- | ----- | ---- | ---- | --- | ---- | ------ |
-| 1. app-rendering | 8     | 6    | 2    | 0   | 0    | Done   |
+| 1. app-rendering | 8     | 7    | 1    | 0   | 0    | Done   |
 | 2. not-found     | 17    | 12   | 0    | 5   | 0    | Done   |
 | 3. global-error  | 12    | 7    | 0    | 5   | 0    | Done   |
 | 4. dynamic       | 17    | 8    | 0    | 9   | 0    | Done   |
@@ -354,7 +353,7 @@ Three Playwright spec files cover client-side behaviors that cannot be tested vi
 
 | Chunk                    | Tests    | Pass    | Skip  | N/A      | Fail  | Status        |
 | ------------------------ | -------- | ------- | ----- | -------- | ----- | ------------- |
-| 1. app-rendering         | 8        | 6       | 2     | 0        | 0     | Done          |
+| 1. app-rendering         | 8        | 7       | 1     | 0        | 0     | Done          |
 | 2. not-found             | 17       | 12      | 0     | 5        | 0     | Done          |
 | 3. global-error          | 11       | 6       | 0     | 5        | 0     | Done          |
 | 4. dynamic               | 17       | 8       | 0     | 9        | 0     | Done          |
@@ -372,7 +371,7 @@ Three Playwright spec files cover client-side behaviors that cannot be tested vi
 | 21. prefetch             | 4        | 4       | 0     | 0        | 0     | Done          |
 | 22. metadata-suspense    | 3        | 2       | 1     | 0        | 0     | Done          |
 | P5. shim/core unit tests | 230      | 230     | 0     | 0        | 0     | Done          |
-| **Total**                | **555+** | **365** | **3** | **188+** | **0** |               |
+| **Total**                | **555+** | **366** | **2** | **188+** | **0** |               |
 
 ### Playwright Browser Tests
 
