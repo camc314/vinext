@@ -80,6 +80,11 @@ describe("Next.js compat: metadata", () => {
     expect(child.html).toContain("<title>Grouped Child | Grouped Layout</title>");
   });
 
+  it("should ignore a parallel layout template on its colocated slot page", async () => {
+    const { html } = await fetchHtml(baseUrl, "/nextjs-compat/metadata-parallel-title-template");
+    expect(html).toContain("<title>Slot Page</title>");
+  });
+
   // ── Basic metadata tags ──────────────────────────────────────
   // Next.js: 'should support other basic tags'
   // Source: https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/metadata/metadata.test.ts#L52-L89

@@ -39,6 +39,54 @@ describe("app page head resolution", () => {
     },
   );
 
+  it.each([
+    { routeSegments: null, layoutTreePositions: undefined },
+    { routeSegments: [], layoutTreePositions: undefined },
+    { routeSegments: [], layoutTreePositions: [0] },
+  ])(
+    "keeps ordered title merging when layout positions are unavailable: $routeSegments $layoutTreePositions",
+    async ({ routeSegments, layoutTreePositions }) => {
+      const result = await resolveAppPageHead<Record<string, unknown>>({
+        layoutModules: [
+          { metadata: { title: "Root" } },
+          { metadata: { title: { default: "Layout", template: "%s | Layout" } } },
+        ],
+        layoutTreePositions,
+        metadataRoutes: [],
+        pageModule: { metadata: { title: "Page" } },
+        params: {},
+        routePath: "/",
+        routeSegments,
+      });
+
+      expect(result.metadata?.title).toBe("Page | Layout");
+    },
+  );
+
+  it("does not apply a colocated parallel layout template to its slot page", async () => {
+    const result = await resolveAppPageHead<Record<string, unknown>>({
+      layoutModules: [],
+      metadataRoutes: [],
+      pageModule: {},
+      parallelRoutes: [
+        {
+          layoutModules: [
+            { metadata: { title: { default: "Ancestor", template: "%s | Ancestor" } } },
+            { metadata: { title: { default: "Slot", template: "%s | Slot" } } },
+          ],
+          layoutTreePositions: [0, 2],
+          pageModule: { metadata: { title: "Slot Page" } },
+          routeSegments: ["dashboard", "@slot"],
+        },
+      ],
+      params: {},
+      routePath: "/dashboard",
+      routeSegments: ["dashboard"],
+    });
+
+    expect(result.metadata?.title).toBe("Slot Page | Ancestor");
+  });
+
   it("prepares viewport independently while generated metadata is pending", async () => {
     // Ported from Next.js: test/e2e/app-dir/metadata-streaming/metadata-streaming.test.ts
     // https://github.com/vercel/next.js/blob/v16.2.7/test/e2e/app-dir/metadata-streaming/metadata-streaming.test.ts
