@@ -190,7 +190,7 @@ export type Metadata = {
     | {
         index?: boolean;
         follow?: boolean;
-        googleBot?: string | { index?: boolean; follow?: boolean; [key: string]: unknown };
+        googleBot?: string | { index?: boolean; follow?: boolean; [key: string]: unknown } | null;
         [key: string]: unknown;
       };
   openGraph?: {
@@ -579,17 +579,54 @@ export function mergeMetadataEntries(entries: readonly MetadataMergeEntry[]): Me
 // Next.js supplies resolved array values and string URLs to generateMetadata,
 // even when an ancestor exported scalar keywords or a URL metadataBase.
 function resolveParentMetadataValues(metadata: Metadata): Metadata {
-  const resolved = { ...metadata };
+  const resolved = cloneParentMetadataValues(metadata) as Metadata;
   if (resolved.metadataBase instanceof URL) {
     resolved.metadataBase = resolved.metadataBase.toString();
   }
   for (const key of ["keywords", "authors", "archives", "assets", "bookmarks"] as const) {
     const value = metadata[key];
     if (value != null) {
-      Object.assign(resolved, { [key]: Array.isArray(value) ? [...value] : [value] });
+      Object.assign(resolved, { [key]: Array.isArray(value) ? resolved[key] : [resolved[key]] });
     }
   }
+  if (metadata.title != null) {
+    resolved.title = {
+      absolute: resolveStringTitle(metadata.title),
+      template: typeof metadata.title === "object" ? metadata.title.template : undefined,
+    };
+  }
+  if (metadata.robots != null) {
+    const { googleBot, ...robots } =
+      typeof metadata.robots === "string" ? { basic: metadata.robots } : metadata.robots;
+    resolved.robots = {
+      basic: "basic" in robots ? robots.basic : formatRobots(robots),
+      googleBot: googleBot ? formatRobots(googleBot) : null,
+    };
+  }
   return resolved;
+}
+
+function cloneParentMetadataValues(value: unknown): unknown {
+  if (value instanceof URL) return new URL(value);
+  if (Array.isArray(value)) return value.map(cloneParentMetadataValues);
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, cloneParentMetadataValues(nested)]),
+    );
+  }
+  return value;
+}
+
+function formatRobots(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!isPlainObject(value)) return "";
+  const parts: string[] = [];
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === true) parts.push(key);
+    else if (entry === false) parts.push(`no${key}`);
+    else if (typeof entry === "string" || typeof entry === "number") parts.push(`${key}:${entry}`);
+  }
+  return parts.join(", ");
 }
 
 /**
@@ -818,23 +855,11 @@ function resolveCanonicalUrl(
   trailingSlash?: boolean,
 ): string {
   if (url instanceof URL) {
-    return resolveMetadataUrl(url, metadataBase, trailingSlash);
-  }
-  return resolveMetadataUrl(resolveRelativeMetadataUrl(url, pathname), metadataBase, trailingSlash);
-}
-
-function resolveAlternateUrl(
-  url: string | URL,
-  metadataBase: URL | null | undefined,
-  pathname: string,
-  trailingSlash?: boolean,
-): string {
-  if (url instanceof URL) {
     const resolvedUrl = new URL(pathname, url);
     url.searchParams.forEach((value, key) => resolvedUrl.searchParams.set(key, value));
     return resolveMetadataUrl(resolvedUrl, metadataBase, trailingSlash);
   }
-  return resolveCanonicalUrl(url, metadataBase, pathname, trailingSlash);
+  return resolveMetadataUrl(resolveRelativeMetadataUrl(url, pathname), metadataBase, trailingSlash);
 }
 
 function isSocialImageDescriptor(
@@ -1050,29 +1075,16 @@ export function MetadataHead({
       elements.push(<meta key={key++} name="robots" content={metadata.robots} />);
     } else {
       const { googleBot, ...robotsRest } = metadata.robots;
-      const robotParts: string[] = [];
-      for (const [k, v] of Object.entries(robotsRest)) {
-        if (v === true) robotParts.push(k);
-        else if (v === false) robotParts.push(`no${k}`);
-        else if (typeof v === "string" || typeof v === "number") robotParts.push(`${k}:${v}`);
-      }
-      if (robotParts.length > 0) {
-        elements.push(<meta key={key++} name="robots" content={robotParts.join(", ")} />);
+      const robotsContent =
+        typeof robotsRest.basic === "string" ? robotsRest.basic : formatRobots(robotsRest);
+      if (robotsContent) {
+        elements.push(<meta key={key++} name="robots" content={robotsContent} />);
       }
       // googlebot
       if (googleBot) {
-        if (typeof googleBot === "string") {
-          elements.push(<meta key={key++} name="googlebot" content={googleBot} />);
-        } else {
-          const gbParts: string[] = [];
-          for (const [k, v] of Object.entries(googleBot)) {
-            if (v === true) gbParts.push(k);
-            else if (v === false) gbParts.push(`no${k}`);
-            else if (typeof v === "string" || typeof v === "number") gbParts.push(`${k}:${v}`);
-          }
-          if (gbParts.length > 0) {
-            elements.push(<meta key={key++} name="googlebot" content={gbParts.join(", ")} />);
-          }
+        const googleBotContent = formatRobots(googleBot);
+        if (googleBotContent) {
+          elements.push(<meta key={key++} name="googlebot" content={googleBotContent} />);
         }
       }
     }
@@ -1340,7 +1352,7 @@ export function MetadataHead({
             <link
               key={key++}
               rel="alternate"
-              href={resolveAlternateUrl(descriptor.url, base, pathname, trailingSlash)}
+              href={resolveCanonicalUrl(descriptor.url, base, pathname, trailingSlash)}
               title={descriptor.title || undefined}
               {...{ [kind]: attribute }}
             />,

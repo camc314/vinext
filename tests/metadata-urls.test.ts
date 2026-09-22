@@ -33,4 +33,15 @@ describe("metadata alternate URLs", () => {
     );
     expect(html).not.toContain("omitted");
   });
+
+  it("resolves URL-instance canonical descriptors with the current pathname", () => {
+    const html = renderMetadataToHtml(
+      {
+        metadataBase: "https://example.com",
+        alternates: { canonical: { url: new URL("https://other.example/root?ref=source") } },
+      },
+      "/article",
+    );
+    expect(html).toContain('rel="canonical" href="https://other.example/article?ref=source"');
+  });
 });
