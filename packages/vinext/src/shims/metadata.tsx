@@ -862,6 +862,17 @@ function resolveCanonicalUrl(
   return resolveMetadataUrl(resolveRelativeMetadataUrl(url, pathname), metadataBase, trailingSlash);
 }
 
+function resolveOpenGraphUrl(
+  url: string | URL,
+  metadataBase: URL | null | undefined,
+  pathname: string,
+  trailingSlash?: boolean,
+): string {
+  return url instanceof URL
+    ? resolveMetadataUrl(url, metadataBase, trailingSlash)
+    : resolveCanonicalUrl(url, metadataBase, pathname, trailingSlash);
+}
+
 function isSocialImageDescriptor(
   value: string | URL | SocialImageDescriptor,
 ): value is SocialImageDescriptor {
@@ -1101,7 +1112,7 @@ export function MetadataHead({
         <meta
           key={key++}
           property="og:url"
-          content={resolveCanonicalUrl(og.url, base, pathname, trailingSlash)}
+          content={resolveOpenGraphUrl(og.url, base, pathname, trailingSlash)}
         />,
       );
     }
