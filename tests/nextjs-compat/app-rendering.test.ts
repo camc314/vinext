@@ -105,13 +105,12 @@ describe("Next.js compat: app-rendering", () => {
     // Next.js: test/e2e/app-dir/app-rendering/rendering.test.ts
     // https://github.com/vercel/next.js/blob/v16.2.6/test/e2e/app-dir/app-rendering/rendering.test.ts
     // Development requests re-render without ISR caching, so both timestamps change.
-    it("should produce different timestamps on subsequent requests", async () => {
+    it("should render fresh timestamps before the revalidation window", async () => {
       const { html: html1 } = await fetchHtml(baseUrl, "/nextjs-compat/isr-multiple/nested");
       const layoutNow1 = html1.match(/id="layout-now"[^>]*>(\d+)/)?.[1];
       const pageNow1 = html1.match(/id="page-now"[^>]*>(\d+)/)?.[1];
 
-      // Wait for revalidation window (revalidate = 1 second)
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 20));
 
       const { html: html2 } = await fetchHtml(baseUrl, "/nextjs-compat/isr-multiple/nested");
       const layoutNow2 = html2.match(/id="layout-now"[^>]*>(\d+)/)?.[1];
