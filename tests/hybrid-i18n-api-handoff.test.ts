@@ -13,7 +13,6 @@ describe("hybrid i18n API handoff", () => {
   it.each([
     ["disabled", false],
     ["custom", true],
-    ["custom-hybrid", true],
     ["vite-root", true],
   ] as const)(
     "scopes the CLI build warning for %s App Router",
@@ -21,23 +20,20 @@ describe("hybrid i18n API handoff", () => {
       const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, `vinext-cli-i18n-${variant}-`);
       try {
         if (variant !== "disabled") {
-          const routeRoot = path.join(fixtureRoot, variant === "vite-root" ? "frontend" : "custom");
+          const routeRoot = path.join(fixtureRoot, variant === "custom" ? "custom" : "frontend");
           await fs.mkdir(routeRoot);
           await fs.rename(path.join(fixtureRoot, "app"), path.join(routeRoot, "app"));
-          if (variant === "vite-root" || variant === "custom-hybrid") {
-            await fs.rename(path.join(fixtureRoot, "pages"), path.join(routeRoot, "pages"));
-          }
-          const configPath = path.join(
-            variant === "vite-root" ? routeRoot : fixtureRoot,
-            "next.config.mjs",
-          );
-          await fs.writeFile(
-            configPath,
-            `export default {
+          if (variant === "vite-root") {
+            await fs.rm(path.join(fixtureRoot, "next.config.mjs"));
+          } else {
+            await fs.writeFile(
+              path.join(fixtureRoot, "next.config.mjs"),
+              `export default {
             i18n: { locales: ["en", "fr"], defaultLocale: "en" },
             async redirects() { console.error("cli-preflight-config-resolved"); return []; },
           };\n`,
-          );
+            );
+          }
         }
         const vinextUrl = pathToFileURL(
           path.resolve(import.meta.dirname, "../packages/vinext/dist/index.js"),
@@ -45,10 +41,17 @@ describe("hybrid i18n API handoff", () => {
         const options =
           variant === "disabled"
             ? { disableAppRouter: true }
-            : { appDir: variant === "vite-root" ? "." : "custom" };
+            : { appDir: variant === "custom" ? "custom" : "." };
+        const optionsSource =
+          variant === "vite-root"
+            ? `{ appDir: ".", nextConfig: {
+                i18n: { locales: ["en", "fr"], defaultLocale: "en" },
+                async redirects() { console.error("cli-preflight-config-resolved"); return []; },
+              } }`
+            : JSON.stringify(options);
         await fs.writeFile(
           path.join(fixtureRoot, "vite.config.mjs"),
-          `import vinext from ${JSON.stringify(vinextUrl)};\nexport default { ${variant === "vite-root" ? 'root: "frontend", ' : ""}plugins: [vinext(${JSON.stringify(options)})] };\n`,
+          `import vinext from ${JSON.stringify(vinextUrl)};\nexport default { ${variant === "vite-root" ? 'root: "frontend", ' : ""}plugins: [vinext(${optionsSource})] };\n`,
         );
         const result = spawnSync(
           process.execPath,
@@ -56,26 +59,16 @@ describe("hybrid i18n API handoff", () => {
           { cwd: fixtureRoot, encoding: "utf8", timeout: 60000 },
         );
         expect(result.status, result.stderr).toBe(0);
-        if (variant === "vite-root" || variant === "custom-hybrid") {
-          expect(result.stdout).toContain("Building Pages Router server (hybrid)");
-        } else {
+        if (variant === "custom") {
           expect(result.stdout).not.toContain("Building Pages Router server (hybrid)");
         }
-        if (variant === "custom-hybrid") {
-          const pagesEntry = await fs.readFile(
-            path.join(fixtureRoot, "dist/server/entry.js"),
-            "utf8",
-          );
-          expect(pagesEntry).toContain("Hybrid i18n API handoff fixture");
-        }
+        const expectedWarning = `i18n configuration in next.config.${variant === "vite-root" ? "js" : "mjs"} is unsupported in App Router`;
         expect(
-          (result.stdout + result.stderr).match(
-            /i18n configuration in next.config.mjs is unsupported in App Router/g,
-          ) ?? [],
+          (result.stdout + result.stderr).split(expectedWarning),
           `${result.stdout}\n${result.stderr}`,
-        ).toHaveLength(shouldWarn ? 1 : 0);
+        ).toHaveLength(shouldWarn ? 2 : 1);
         if (variant !== "disabled") {
-          expect(result.stderr.indexOf("i18n configuration in next.config.mjs")).toBeLessThan(
+          expect(result.stderr.indexOf(expectedWarning)).toBeLessThan(
             result.stderr.indexOf("cli-preflight-config-resolved"),
           );
         }

@@ -25,6 +25,7 @@ import { randomBytes } from "node:crypto";
 import {
   detectPackageManager,
   ensureViteConfigCompatibility,
+  hasAppDir,
   hasViteConfig,
 } from "./utils/project.js";
 import { runCheck, formatReport } from "./check.js";
@@ -228,6 +229,13 @@ function createBuildLogger(vite: ViteModule): import("vite").Logger {
 }
 
 // ─── Auto-configuration ───────────────────────────────────────────────────────
+
+function hasPagesDir(): boolean {
+  return (
+    fs.existsSync(path.join(process.cwd(), "pages")) ||
+    fs.existsSync(path.join(process.cwd(), "src", "pages"))
+  );
+}
 
 type BuildViteConfigMetadata = {
   cacheConfig: VinextCacheConfig | null;
@@ -511,30 +519,28 @@ async function buildApp() {
   console.log(`\n  vinext build  (Vite ${getViteVersion()})\n`);
 
   const root = toSlash(process.cwd());
+  const isApp = hasAppDir(root);
   const buildConfigMetadata = await loadBuildViteConfigMetadata(vite, root, buildMode);
   const routeRootConfig = buildConfigMetadata.routeRootConfig;
-  let routeBase = buildConfigMetadata.effectiveRoot;
+  let appRouterBase = buildConfigMetadata.effectiveRoot;
   if (routeRootConfig?.appDir) {
-    routeBase = path.resolve(routeBase, routeRootConfig.appDir);
+    appRouterBase = path.resolve(appRouterBase, routeRootConfig.appDir);
   } else if (
-    !fs.existsSync(path.join(routeBase, "app")) &&
-    !fs.existsSync(path.join(routeBase, "pages")) &&
-    (fs.existsSync(path.join(routeBase, "src", "app")) ||
-      fs.existsSync(path.join(routeBase, "src", "pages")))
+    !fs.existsSync(path.join(appRouterBase, "app")) &&
+    !fs.existsSync(path.join(appRouterBase, "pages")) &&
+    (fs.existsSync(path.join(appRouterBase, "src", "app")) ||
+      fs.existsSync(path.join(appRouterBase, "src", "pages")))
   ) {
-    routeBase = path.join(routeBase, "src");
+    appRouterBase = path.join(appRouterBase, "src");
   }
-  const isApp = !routeRootConfig?.disableAppRouter && fs.existsSync(path.join(routeBase, "app"));
+  const hasActiveAppRouter =
+    !routeRootConfig?.disableAppRouter && fs.existsSync(path.join(appRouterBase, "app"));
   const rawNextConfig = buildConfigMetadata.nextConfig
     ? await resolveNextConfigInput(buildConfigMetadata.nextConfig, PHASE_PRODUCTION_BUILD)
-    : await loadNextConfig(buildConfigMetadata.effectiveRoot, PHASE_PRODUCTION_BUILD);
-  const resolvedNextConfig = await resolveNextConfig(
-    rawNextConfig,
-    buildConfigMetadata.effectiveRoot,
-    {
-      hasAppDir: isApp,
-    },
-  );
+    : await loadNextConfig(root, PHASE_PRODUCTION_BUILD);
+  const resolvedNextConfig = await resolveNextConfig(rawNextConfig, root, {
+    hasAppDir: hasActiveAppRouter,
+  });
 
   // Coordinate a single build ID across every vinext() plugin instance in this
   // build. A hybrid app+pages build runs the App Router multi-environment build
@@ -632,7 +638,7 @@ async function buildApp() {
   // use createBuilder + buildApp(). vinext() defines the appropriate environments
   // in its config() hook for each case, so cloudflare() and the plain Node SSR
   // build both work correctly.
-  const isHybrid = isApp && fs.existsSync(path.join(routeBase, "pages"));
+  const isHybrid = isApp && hasPagesDir();
   const pagesClientAssetsBuildSession = isHybrid ? randomBytes(16).toString("hex") : null;
   if (pagesClientAssetsBuildSession) {
     process.env.__VINEXT_PAGES_CLIENT_ASSETS_BUILD_SESSION = pagesClientAssetsBuildSession;
@@ -692,7 +698,7 @@ async function buildApp() {
           root,
           mode: buildMode,
           configFile: false,
-          plugins: [...userTransformPlugins, vinext({ appDir: routeBase, disableAppRouter: true })],
+          plugins: [...userTransformPlugins, vinext({ disableAppRouter: true })],
           resolve: {
             dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
           },
