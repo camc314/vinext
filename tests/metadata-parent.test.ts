@@ -108,6 +108,80 @@ describe("generateMetadata parent values", () => {
     expect(renderMetadataToHtml(result!)).toContain('name="robots" content="noindex, follow"');
   });
 
+  it("treats empty robots as null in the resolved parent", async () => {
+    const result = await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const { robots } = await resolving;
+          expect(robots).toBeNull();
+          return { robots };
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve({ robots: "" }),
+    );
+    expect(renderMetadataToHtml(result!)).not.toContain('name="robots"');
+  });
+
+  it("exposes robots directives in Next.js order regardless of input order", async () => {
+    const result = await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const { robots } = await resolving;
+          expect(robots).toEqual({
+            basic: "index, nofollow, noarchive, nosnippet",
+            googleBot: "index, nofollow, noarchive, max-snippet:0",
+          });
+          return { robots };
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve({
+        robots: {
+          noarchive: true,
+          follow: false,
+          nosnippet: true,
+          index: true,
+          googleBot: { "max-snippet": 0, noarchive: true, follow: false, index: true },
+        },
+      }),
+    );
+    const html = renderMetadataToHtml(result!);
+    expect(html).toContain('name="robots" content="index, nofollow, noarchive, nosnippet"');
+    expect(html).toContain('name="googlebot" content="index, nofollow, noarchive, max-snippet:0"');
+  });
+
+  it("observes a derived parent rejection when a child ignores its parent", async () => {
+    let rejectParent!: (error: Error) => void;
+    const parent = new Promise<Metadata>((_resolve, reject) => {
+      rejectParent = reject;
+    });
+    void parent.catch(() => null);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const result = await resolveModuleMetadata(
+        {
+          async generateMetadata(_props: unknown, _resolving: Promise<Metadata>) {
+            return { description: "child" };
+          },
+        },
+        {},
+        undefined,
+        parent,
+      );
+      expect(result?.description).toBe("child");
+      rejectParent(new Error("ancestor failed"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("omits false robots directives other than index and follow from parent and HTML", async () => {
     const result = await resolveModuleMetadata(
       {
@@ -274,6 +348,89 @@ describe("generateMetadata parent values", () => {
     );
     expect(parent.alternates.canonical).toBe("./");
     expect(parent.alternates.languages.en).toBe("./en");
+  });
+
+  it("keeps the base from the layout that declared inherited alternates", async () => {
+    const result = await resolveAppPageHead<Record<string, unknown>>({
+      layoutModules: [
+        {
+          metadata: {
+            metadataBase: new URL("https://root.example"),
+            alternates: { canonical: "./", languages: { en: "./en" } },
+          },
+        },
+        { metadata: { metadataBase: new URL("https://nested.example") } },
+      ],
+      layoutTreePositions: [0, 1],
+      metadataRoutes: [],
+      pageModule: {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const { alternates } = await resolving;
+          expect(alternates?.canonical).toEqual({ url: "https://root.example/article" });
+          expect(alternates?.languages?.en).toEqual([{ url: "https://root.example/article/en" }]);
+          return { alternates };
+        },
+      },
+      params: {},
+      routePath: "/article",
+      routeSegments: ["article"],
+    });
+    expect(renderMetadataToHtml(result.metadata!, "/article")).toContain(
+      'rel="canonical" href="https://root.example/article"',
+    );
+  });
+
+  it("supplies trailingSlash-adjusted alternate URLs to child metadata", async () => {
+    const result = await resolveAppPageHead<Record<string, unknown>>({
+      layoutModules: [
+        {
+          metadata: {
+            metadataBase: new URL("https://example.com"),
+            alternates: { canonical: "./", languages: { en: "./en" } },
+          },
+        },
+      ],
+      metadataRoutes: [],
+      pageModule: {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const { alternates } = await resolving;
+          expect(alternates?.canonical).toEqual({ url: "https://example.com/article/" });
+          expect(alternates?.languages?.en).toEqual([{ url: "https://example.com/article/en/" }]);
+          return { alternates };
+        },
+      },
+      params: {},
+      routePath: "/article",
+      trailingSlash: true,
+    });
+    expect(renderMetadataToHtml(result.metadata!, "/article", { trailingSlash: true })).toContain(
+      'rel="canonical" href="https://example.com/article/"',
+    );
+  });
+
+  it("resolves a title map key as a URL but preserves descriptor titles", async () => {
+    await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const { alternates } = await resolving;
+          expect(alternates?.media?.title).toEqual([{ url: "https://example.com/article/print" }]);
+          expect(alternates?.media?.print).toEqual([
+            { url: "https://example.com/article/print", title: "Print" },
+          ]);
+          return {};
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve({
+        metadataBase: new URL("https://example.com"),
+        alternates: {
+          media: { title: "./print", print: [{ url: "./print", title: "Print" }] },
+        },
+      }),
+      undefined,
+      "/article",
+    );
   });
 
   it("omits null and empty alternate entries from the resolved parent", async () => {

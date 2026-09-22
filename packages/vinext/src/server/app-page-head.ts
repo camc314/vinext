@@ -142,6 +142,7 @@ type ResolveAppPageHeadOptions<TModule extends AppPageHeadModule = AppPageHeadMo
   routeSegments?: readonly string[] | null;
   searchParams?: URLSearchParams | null;
   searchParamsObserver?: ThenableParamsObserver;
+  trailingSlash?: boolean;
 };
 
 type AppPageMetadataOutputOptions = {
@@ -152,6 +153,7 @@ type AppPageMetadataOutputOptions = {
   params: AppPageParams;
   routePath: string;
   routeSegments?: readonly string[] | null;
+  trailingSlash?: boolean;
 };
 
 export type ResolveOrderedAppPageMetadataOptions<
@@ -440,6 +442,7 @@ async function resolveLayoutMetadata<TModule extends AppPageHeadModule>(
   params: AppPageParams,
   routeSegments: readonly string[],
   pathname: string,
+  trailingSlash?: boolean,
 ): Promise<(Metadata | null)[]> {
   const layoutMetadataPromises: Promise<Metadata | null>[] = [];
   let accumulatedMetadata = Promise.resolve<Metadata>({});
@@ -459,6 +462,7 @@ async function resolveLayoutMetadata<TModule extends AppPageHeadModule>(
       parentForLayout,
       undefined,
       pathname,
+      trailingSlash,
     );
     layoutMetadataPromises.push(metadataPromise);
     void metadataPromise.catch(() => null);
@@ -468,6 +472,7 @@ async function resolveLayoutMetadata<TModule extends AppPageHeadModule>(
         return mergeMetadataEntries(
           [{ metadata: await parentForLayout }, { metadata: metadataResult }],
           true,
+          { pathname, trailingSlash },
         );
       }
       return parentForLayout;
@@ -544,6 +549,7 @@ async function resolveParallelRouteMetadata<TModule extends AppPageHeadModule>(
   parent: Promise<Metadata>,
   searchParamsObserver?: ThenableParamsObserver,
   pathname?: string,
+  trailingSlash?: boolean,
 ): Promise<ResolvedParallelRouteMetadata> {
   const params = parallelRoute.params ?? fallbackParams;
   const routeSegments = parallelRoute.routeSegments ?? fallbackRouteSegments;
@@ -574,6 +580,7 @@ async function resolveParallelRouteMetadata<TModule extends AppPageHeadModule>(
       accumulatedMetadata,
       undefined,
       pathname,
+      trailingSlash,
     );
     metadataResults.push(layoutMetadata);
     // Parallel route metadata sources are scoped to the active slot branch because
@@ -582,7 +589,11 @@ async function resolveParallelRouteMetadata<TModule extends AppPageHeadModule>(
     if (layoutMetadata) {
       const parentForLayout = accumulatedMetadata;
       accumulatedMetadata = parentForLayout.then(async (parentMetadata) =>
-        mergeMetadataEntries([{ metadata: parentMetadata }, { metadata: layoutMetadata }], true),
+        mergeMetadataEntries(
+          [{ metadata: parentMetadata }, { metadata: layoutMetadata }],
+          true,
+          pathname ? { pathname, trailingSlash } : undefined,
+        ),
       );
       void accumulatedMetadata.catch(() => null);
     }
@@ -597,6 +608,7 @@ async function resolveParallelRouteMetadata<TModule extends AppPageHeadModule>(
       accumulatedMetadata,
       searchParamsObserver,
       pathname,
+      trailingSlash,
     );
     metadataResults.push(pageMetadata);
     // Keep the page source scoped to the same active slot branch as its layouts.
@@ -676,7 +688,9 @@ export function resolveOrderedAppPageMetadata<TModule extends AppPageHeadModule>
 
     for (const source of options.sources) {
       const parentPromise = accumulatedEntriesPromise.then((entries) =>
-        entries.length > 0 ? mergeMetadataEntries(entries, true) : {},
+        entries.length > 0
+          ? mergeMetadataEntries(entries, true, { pathname, trailingSlash: options.trailingSlash })
+          : {},
       );
       const metadataPromise = resolveModuleMetadata(
         source.moduleRoute,
@@ -686,6 +700,7 @@ export function resolveOrderedAppPageMetadata<TModule extends AppPageHeadModule>
         parentPromise,
         source.searchParamsObserver,
         pathname,
+        options.trailingSlash,
       );
       metadataPromises.push(metadataPromise);
       void metadataPromise.catch(() => null);
@@ -753,6 +768,7 @@ function prepareAppPageHeadInner<TModule extends AppPageHeadModule>(
     options.params,
     routeSegments,
     pathname,
+    options.trailingSlash,
   );
   const layoutViewport = resolveLayoutViewport(layoutInputs, options.params, routeSegments);
   const layoutViewportPromise = layoutViewport.viewportResults;
@@ -766,6 +782,7 @@ function prepareAppPageHeadInner<TModule extends AppPageHeadModule>(
       ? mergeMetadataEntries(
           metadataResults.map((metadata) => ({ metadata })),
           true,
+          { pathname, trailingSlash: options.trailingSlash },
         )
       : {},
   );
@@ -779,6 +796,7 @@ function prepareAppPageHeadInner<TModule extends AppPageHeadModule>(
         pageParentPromise,
         options.searchParamsObserver,
         pathname,
+        options.trailingSlash,
       )
     : Promise.resolve(null);
   const parallelRoutes = options.parallelRoutes ?? [];
@@ -792,6 +810,7 @@ function prepareAppPageHeadInner<TModule extends AppPageHeadModule>(
         pageParentPromise,
         options.searchParamsObserver,
         pathname,
+        options.trailingSlash,
       ),
     ),
   );

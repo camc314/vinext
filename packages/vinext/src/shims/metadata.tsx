@@ -186,6 +186,7 @@ export type Metadata = {
   creator?: string;
   publisher?: string;
   robots?:
+    | null
     | string
     | {
         index?: boolean;
@@ -530,6 +531,7 @@ export function postProcessMetadata(merged: Metadata): Metadata {
 export function mergeMetadataEntries(
   entries: readonly MetadataMergeEntry[],
   forParent = false,
+  parentContext?: { pathname: string; trailingSlash?: boolean },
 ): Metadata {
   if (entries.length === 0) return {};
 
@@ -559,6 +561,16 @@ export function mergeMetadataEntries(
       }
     }
 
+    if (forParent && parentContext && meta.alternates) {
+      const base = merged.metadataBase ? new URL(merged.metadataBase.toString()) : undefined;
+      merged.alternates = resolveParentAlternates(
+        meta.alternates,
+        base,
+        parentContext.pathname,
+        parentContext.trailingSlash,
+      );
+    }
+
     // Title resolution
     if (contributesTitle && meta.title !== undefined) {
       merged.title = resolveTitle(meta.title, parentTemplate);
@@ -584,11 +596,20 @@ export function mergeMetadataEntries(
 
 // Next.js supplies resolved array values and string URLs to generateMetadata,
 // even when an ancestor exported scalar keywords or a URL metadataBase.
-function resolveParentMetadataValues(metadata: Metadata, pathname?: string): Metadata {
+function resolveParentMetadataValues(
+  metadata: Metadata,
+  pathname?: string,
+  trailingSlash?: boolean,
+): Metadata {
   const resolved = cloneParentMetadataValues(metadata) as Metadata;
   if (pathname && metadata.alternates) {
     const base = metadata.metadataBase ? new URL(metadata.metadataBase.toString()) : undefined;
-    resolved.alternates = resolveParentAlternates(metadata.alternates, base, pathname);
+    resolved.alternates = resolveParentAlternates(
+      metadata.alternates,
+      base,
+      pathname,
+      trailingSlash,
+    );
   }
   for (const key of ["keywords", "authors", "archives", "assets", "bookmarks"] as const) {
     const value = metadata[key];
@@ -602,7 +623,9 @@ function resolveParentMetadataValues(metadata: Metadata, pathname?: string): Met
       template: typeof metadata.title === "object" ? (metadata.title.template ?? null) : null,
     };
   }
-  if (metadata.robots != null) {
+  if (metadata.robots === "") {
+    resolved.robots = null;
+  } else if (metadata.robots != null) {
     const { googleBot, ...robots } =
       typeof metadata.robots === "string" ? { basic: metadata.robots } : metadata.robots;
     resolved.robots = {
@@ -624,66 +647,75 @@ function cloneParentMetadataValues(value: unknown): unknown {
   return value;
 }
 
-function resolveParentAlternateUrls(
-  value: unknown,
-  base: URL | undefined,
-  pathname: string,
-  isUrl = false,
-): unknown {
-  if (value instanceof URL || (isUrl && typeof value === "string")) {
-    return resolveCanonicalUrl(value, base, pathname);
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => resolveParentAlternateUrls(entry, base, pathname, isUrl));
-  }
-  if (isPlainObject(value)) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        key,
-        resolveParentAlternateUrls(entry, base, pathname, key !== "title"),
-      ]),
-    );
-  }
-  return value;
-}
-
 function resolveParentAlternates(
   alternates: NonNullable<Metadata["alternates"]>,
   base: URL | undefined,
   pathname: string,
+  trailingSlash?: boolean,
 ): Metadata["alternates"] {
-  const resolved = resolveParentAlternateUrls(alternates, base, pathname) as Record<
-    string,
-    unknown
-  >;
-  const canonical = resolved.canonical;
-  if (typeof canonical === "string") {
-    resolved.canonical = { url: canonical };
-  } else if (isPlainObject(canonical) && typeof canonical.url === "string") {
-    resolved.canonical = { url: canonical.url };
-  }
+  const canonical = alternates.canonical;
+  const resolved: NonNullable<Metadata["alternates"]> = {
+    canonical: canonical
+      ? {
+          url: resolveCanonicalUrl(
+            typeof canonical === "string" || canonical instanceof URL ? canonical : canonical.url,
+            base,
+            pathname,
+            trailingSlash,
+          ),
+        }
+      : null,
+  };
   for (const key of ["languages", "media", "types"] as const) {
-    const values = resolved[key];
-    if (!isPlainObject(values)) continue;
+    const values = alternates[key];
+    if (!values) continue;
     resolved[key] = Object.fromEntries(
-      Object.entries(values)
-        .filter(
-          ([, value]) => typeof value === "string" || (Array.isArray(value) && value.length > 0),
-        )
-        .map(([name, value]) => [name, typeof value === "string" ? [{ url: value }] : value]),
+      Object.entries(values).flatMap(([name, value]) => {
+        if (!value || (Array.isArray(value) && value.length === 0)) return [];
+        return [
+          [
+            name,
+            typeof value === "string" || value instanceof URL
+              ? [{ url: resolveCanonicalUrl(value, base, pathname, trailingSlash) }]
+              : value.map((descriptor) => ({
+                  url: resolveCanonicalUrl(descriptor.url, base, pathname, trailingSlash),
+                  title: descriptor.title,
+                })),
+          ],
+        ];
+      }),
     );
   }
-  return resolved as Metadata["alternates"];
+  return resolved;
 }
+
+const ROBOTS_KEYS = [
+  "noarchive",
+  "nosnippet",
+  "noimageindex",
+  "nocache",
+  "notranslate",
+  "indexifembedded",
+  "nositelinkssearchbox",
+  "unavailable_after",
+  "max-video-preview",
+  "max-image-preview",
+  "max-snippet",
+] as const;
 
 function formatRobots(value: unknown): string {
   if (typeof value === "string") return value;
   if (!isPlainObject(value)) return "";
   const parts: string[] = [];
-  for (const [key, entry] of Object.entries(value)) {
-    if (entry === true) parts.push(key);
-    else if (entry === false && (key === "index" || key === "follow")) parts.push(`no${key}`);
-    else if (typeof entry === "string" || typeof entry === "number") parts.push(`${key}:${entry}`);
+  for (const key of ["index", "follow"] as const) {
+    if (value[key]) parts.push(key);
+    else if (value[key] === false) parts.push(`no${key}`);
+  }
+  for (const key of ROBOTS_KEYS) {
+    const entry = value[key];
+    if (entry === true || typeof entry === "string" || typeof entry === "number") {
+      parts.push(typeof entry === "boolean" ? key : `${key}:${entry}`);
+    }
   }
   return parts.join(", ");
 }
@@ -705,6 +737,7 @@ export async function resolveModuleMetadata(
   parent: Promise<Metadata> = Promise.resolve({}),
   searchParamsObserver?: ThenableParamsObserver,
   pathname?: string,
+  trailingSlash?: boolean,
 ): Promise<Metadata | null> {
   if (typeof mod.generateMetadata === "function") {
     const generateMetadata = mod.generateMetadata;
@@ -733,12 +766,14 @@ export async function resolveModuleMetadata(
       (typeof acceptsSecondArgument === "boolean"
         ? acceptsSecondArgument
         : generateMetadata.length >= 2);
-    return await (passesParent
-      ? generateMetadata(
-          props,
-          parent.then((metadata) => resolveParentMetadataValues(metadata, pathname)),
-        )
-      : generateMetadata(props));
+    if (passesParent) {
+      const resolvedParent = parent.then((metadata) =>
+        resolveParentMetadataValues(metadata, pathname, trailingSlash),
+      );
+      void resolvedParent.catch(() => null);
+      return await generateMetadata(props, resolvedParent);
+    }
+    return await generateMetadata(props);
   }
   if (mod.metadata && typeof mod.metadata === "object") {
     return mod.metadata as Metadata;

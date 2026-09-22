@@ -688,6 +688,7 @@ export async function renderAppPageHttpAccessFallback<TModule extends AppPageMod
         params: options.matchedParams,
         routePath: options.route?.pattern ?? pathname,
         routeSegments,
+        trailingSlash: options.trailingSlash,
       });
     }
   } catch (error) {
@@ -782,6 +783,7 @@ export async function renderAppPageErrorBoundary<TModule extends AppPageModule>(
         params: matchedParams,
         routePath: options.route?.pattern ?? pathname,
         routeSegments: options.route?.routeSegments,
+        trailingSlash: options.trailingSlash,
       });
       if (metadata) {
         headElements.push(

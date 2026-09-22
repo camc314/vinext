@@ -433,6 +433,7 @@ export async function buildPageElements<
     routeSegments: route.routeSegments ?? null,
     searchParams,
     searchParamsObserver: metadataSearchParamsObserver,
+    trailingSlash: options.trailingSlash,
   });
   const { hasDynamicMetadata, pageSearchParams } = preparedHead;
   const streamGeneratedHead =
