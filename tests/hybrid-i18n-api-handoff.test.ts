@@ -13,6 +13,7 @@ describe("hybrid i18n API handoff", () => {
   it.each([
     ["disabled", false],
     ["custom", true],
+    ["custom-hybrid", true],
     ["vite-root", true],
   ] as const)(
     "scopes the CLI build warning for %s App Router",
@@ -20,10 +21,10 @@ describe("hybrid i18n API handoff", () => {
       const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, `vinext-cli-i18n-${variant}-`);
       try {
         if (variant !== "disabled") {
-          const routeRoot = path.join(fixtureRoot, variant === "custom" ? "custom" : "frontend");
+          const routeRoot = path.join(fixtureRoot, variant === "vite-root" ? "frontend" : "custom");
           await fs.mkdir(routeRoot);
           await fs.rename(path.join(fixtureRoot, "app"), path.join(routeRoot, "app"));
-          if (variant === "vite-root") {
+          if (variant === "vite-root" || variant === "custom-hybrid") {
             await fs.rename(path.join(fixtureRoot, "pages"), path.join(routeRoot, "pages"));
           }
           const configPath = path.join(
@@ -44,7 +45,7 @@ describe("hybrid i18n API handoff", () => {
         const options =
           variant === "disabled"
             ? { disableAppRouter: true }
-            : { appDir: variant === "custom" ? "custom" : "." };
+            : { appDir: variant === "vite-root" ? "." : "custom" };
         await fs.writeFile(
           path.join(fixtureRoot, "vite.config.mjs"),
           `import vinext from ${JSON.stringify(vinextUrl)};\nexport default { ${variant === "vite-root" ? 'root: "frontend", ' : ""}plugins: [vinext(${JSON.stringify(options)})] };\n`,
@@ -55,8 +56,17 @@ describe("hybrid i18n API handoff", () => {
           { cwd: fixtureRoot, encoding: "utf8", timeout: 60000 },
         );
         expect(result.status, result.stderr).toBe(0);
-        if (variant === "vite-root") {
+        if (variant === "vite-root" || variant === "custom-hybrid") {
           expect(result.stdout).toContain("Building Pages Router server (hybrid)");
+        } else {
+          expect(result.stdout).not.toContain("Building Pages Router server (hybrid)");
+        }
+        if (variant === "custom-hybrid") {
+          const pagesEntry = await fs.readFile(
+            path.join(fixtureRoot, "dist/server/entry.js"),
+            "utf8",
+          );
+          expect(pagesEntry).toContain("Hybrid i18n API handoff fixture");
         }
         expect(
           (result.stdout + result.stderr).match(
