@@ -511,8 +511,13 @@ async function buildApp() {
   console.log(`\n  vinext build  (Vite ${getViteVersion()})\n`);
 
   const root = toSlash(process.cwd());
-  const isApp = hasAppDir(root);
   const buildConfigMetadata = await loadBuildViteConfigMetadata(vite, root, buildMode);
+  const routeRootConfig = buildConfigMetadata.routeRootConfig;
+  const isApp =
+    !routeRootConfig?.disableAppRouter &&
+    (routeRootConfig?.appDir
+      ? fs.existsSync(path.join(path.resolve(root, routeRootConfig.appDir), "app"))
+      : hasAppDir(root));
   const rawNextConfig = buildConfigMetadata.nextConfig
     ? await resolveNextConfigInput(buildConfigMetadata.nextConfig, PHASE_PRODUCTION_BUILD)
     : await loadNextConfig(root, PHASE_PRODUCTION_BUILD);

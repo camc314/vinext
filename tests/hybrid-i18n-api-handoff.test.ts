@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { createBuilder, createServer } from "vite";
 import { describe, expect, it, vi } from "vite-plus/test";
 import vinext from "../packages/vinext/src/index.js";
@@ -8,6 +10,56 @@ import { createIsolatedFixture, startFixtureServer } from "./helpers.js";
 const FIXTURE_DIR = path.resolve(import.meta.dirname, "fixtures/hybrid-i18n-api-handoff");
 
 describe("hybrid i18n API handoff", () => {
+  it.each([
+    ["disabled", false],
+    ["custom", true],
+  ] as const)(
+    "scopes the CLI build warning for %s App Router",
+    async (variant, shouldWarn) => {
+      const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, `vinext-cli-i18n-${variant}-`);
+      try {
+        if (variant === "custom") {
+          await fs.mkdir(path.join(fixtureRoot, "custom"));
+          await fs.rename(path.join(fixtureRoot, "app"), path.join(fixtureRoot, "custom", "app"));
+          await fs.writeFile(
+            path.join(fixtureRoot, "next.config.mjs"),
+            `export default {
+            i18n: { locales: ["en", "fr"], defaultLocale: "en" },
+            async redirects() { console.error("cli-preflight-config-resolved"); return []; },
+          };\n`,
+          );
+        }
+        const vinextUrl = pathToFileURL(
+          path.resolve(import.meta.dirname, "../packages/vinext/dist/index.js"),
+        ).href;
+        const options = variant === "disabled" ? { disableAppRouter: true } : { appDir: "custom" };
+        await fs.writeFile(
+          path.join(fixtureRoot, "vite.config.mjs"),
+          `import vinext from ${JSON.stringify(vinextUrl)};\nexport default { plugins: [vinext(${JSON.stringify(options)})] };\n`,
+        );
+        const result = spawnSync(
+          process.execPath,
+          [path.resolve(import.meta.dirname, "../packages/vinext/dist/cli.js"), "build"],
+          { cwd: fixtureRoot, encoding: "utf8", timeout: 60000 },
+        );
+        expect(result.status, result.stderr).toBe(0);
+        expect(
+          (result.stdout + result.stderr).match(
+            /i18n configuration in next.config.mjs is unsupported in App Router/g,
+          ) ?? [],
+        ).toHaveLength(shouldWarn ? 1 : 0);
+        if (variant === "custom") {
+          expect(result.stderr.indexOf("i18n configuration in next.config.mjs")).toBeLessThan(
+            result.stderr.indexOf("cli-preflight-config-resolved"),
+          );
+        }
+      } finally {
+        await fs.rm(fixtureRoot, { recursive: true, force: true });
+      }
+    },
+    120000,
+  );
+
   it("warns once for an active App Router across dev and build, not for a Pages-only pass", async () => {
     const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, "vinext-i18n-warning-");
     await fs.rename(

@@ -43,6 +43,7 @@ type ConfigRootLease = {
 };
 const processWithConfigRootState = process as NodeJS.Process & {
   __vinextConfigRootState?: ConfigRootState;
+  __vinextEmittedConfigWarnings?: Set<string>;
 };
 const configRootState = (processWithConfigRootState.__vinextConfigRootState ??= {
   storage: new AsyncLocalStorage<ConfigRootLease>(),
@@ -1016,7 +1017,8 @@ function hasConfigProperty(config: NextConfig, propertyPath: string): boolean {
   return true;
 }
 
-const emittedConfigWarnings = new Set<string>();
+const emittedConfigWarnings = (processWithConfigRootState.__vinextEmittedConfigWarnings ??=
+  new Set<string>());
 
 function warnConfigOnce(message: string): void {
   if (emittedConfigWarnings.has(message)) return;
