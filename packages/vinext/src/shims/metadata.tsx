@@ -527,7 +527,10 @@ export function postProcessMetadata(merged: Metadata): Metadata {
  * For top-level keys, later entries override earlier ones. `other` custom meta
  * tags are the exception: Next.js merges those across segments.
  */
-export function mergeMetadataEntries(entries: readonly MetadataMergeEntry[]): Metadata {
+export function mergeMetadataEntries(
+  entries: readonly MetadataMergeEntry[],
+  forParent = false,
+): Metadata {
   if (entries.length === 0) return {};
 
   const merged: Metadata = {};
@@ -562,26 +565,29 @@ export function mergeMetadataEntries(entries: readonly MetadataMergeEntry[]): Me
 
     // Collect the current layout template after resolving its own title so
     // title.default is wrapped by the ancestor template, not by its own template.
-    if (
-      contributesTitle &&
-      !isPage &&
-      meta.title &&
-      typeof meta.title === "object" &&
-      meta.title.template
-    ) {
-      parentTemplate = meta.title.template;
+    if (contributesTitle && !isPage && meta.title !== undefined) {
+      parentTemplate =
+        meta.title && typeof meta.title === "object" ? meta.title.template : undefined;
     }
   }
 
+  if (forParent && merged.title != null) {
+    merged.title = { absolute: resolveStringTitle(merged.title) ?? "", template: parentTemplate };
+  }
   return merged;
 }
 
 // Next.js supplies resolved array values and string URLs to generateMetadata,
 // even when an ancestor exported scalar keywords or a URL metadataBase.
-function resolveParentMetadataValues(metadata: Metadata): Metadata {
+function resolveParentMetadataValues(metadata: Metadata, pathname?: string): Metadata {
   const resolved = cloneParentMetadataValues(metadata) as Metadata;
-  if (resolved.metadataBase instanceof URL) {
-    resolved.metadataBase = resolved.metadataBase.toString();
+  if (pathname && metadata.alternates) {
+    const base = metadata.metadataBase ? new URL(metadata.metadataBase.toString()) : undefined;
+    resolved.alternates = resolveParentAlternateUrls(
+      metadata.alternates,
+      base,
+      pathname,
+    ) as Metadata["alternates"];
   }
   for (const key of ["keywords", "authors", "archives", "assets", "bookmarks"] as const) {
     const value = metadata[key];
@@ -607,11 +613,34 @@ function resolveParentMetadataValues(metadata: Metadata): Metadata {
 }
 
 function cloneParentMetadataValues(value: unknown): unknown {
-  if (value instanceof URL) return new URL(value);
+  if (value instanceof URL) return value.toString();
   if (Array.isArray(value)) return value.map(cloneParentMetadataValues);
   if (isPlainObject(value)) {
     return Object.fromEntries(
       Object.entries(value).map(([key, nested]) => [key, cloneParentMetadataValues(nested)]),
+    );
+  }
+  return value;
+}
+
+function resolveParentAlternateUrls(
+  value: unknown,
+  base: URL | undefined,
+  pathname: string,
+  isUrl = false,
+): unknown {
+  if (value instanceof URL || (isUrl && typeof value === "string")) {
+    return resolveCanonicalUrl(value, base, pathname);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => resolveParentAlternateUrls(entry, base, pathname, isUrl));
+  }
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        resolveParentAlternateUrls(entry, base, pathname, key !== "title"),
+      ]),
     );
   }
   return value;
@@ -645,6 +674,7 @@ export async function resolveModuleMetadata(
   searchParams?: Record<string, string | string[]>,
   parent: Promise<Metadata> = Promise.resolve({}),
   searchParamsObserver?: ThenableParamsObserver,
+  pathname?: string,
 ): Promise<Metadata | null> {
   if (typeof mod.generateMetadata === "function") {
     const generateMetadata = mod.generateMetadata;
@@ -674,7 +704,10 @@ export async function resolveModuleMetadata(
         ? acceptsSecondArgument
         : generateMetadata.length >= 2);
     return await (passesParent
-      ? generateMetadata(props, parent.then(resolveParentMetadataValues))
+      ? generateMetadata(
+          props,
+          parent.then((metadata) => resolveParentMetadataValues(metadata, pathname)),
+        )
       : generateMetadata(props));
   }
   if (mod.metadata && typeof mod.metadata === "object") {
