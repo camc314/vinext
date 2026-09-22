@@ -230,15 +230,13 @@ function createBuildLogger(vite: ViteModule): import("vite").Logger {
 
 // ─── Auto-configuration ───────────────────────────────────────────────────────
 
-function hasPagesDir(): boolean {
-  return (
-    fs.existsSync(path.join(process.cwd(), "pages")) ||
-    fs.existsSync(path.join(process.cwd(), "src", "pages"))
-  );
+function hasPagesDir(root: string): boolean {
+  return fs.existsSync(path.join(root, "pages")) || fs.existsSync(path.join(root, "src", "pages"));
 }
 
 type BuildViteConfigMetadata = {
   cacheConfig: VinextCacheConfig | null;
+  effectiveRoot: string;
   emptyOutDir?: boolean;
   nextConfig: NextConfigInput | null;
   prerenderConfig: ResolvedVinextPrerenderConfig | null;
@@ -251,7 +249,13 @@ async function loadBuildViteConfigMetadata(
   mode: string,
 ): Promise<BuildViteConfigMetadata> {
   if (!hasViteConfig(root)) {
-    return { cacheConfig: null, nextConfig: null, prerenderConfig: null, routeRootConfig: null };
+    return {
+      cacheConfig: null,
+      effectiveRoot: root,
+      nextConfig: null,
+      prerenderConfig: null,
+      routeRootConfig: null,
+    };
   }
 
   // Read the raw user config before the multi-environment build so
@@ -260,6 +264,7 @@ async function loadBuildViteConfigMetadata(
   const emptyOutDir = loaded?.config.build?.emptyOutDir;
   return {
     cacheConfig: await findVinextCacheConfigInPlugins(loaded?.config.plugins),
+    effectiveRoot: path.resolve(root, loaded?.config.root ?? "."),
     emptyOutDir: typeof emptyOutDir === "boolean" ? emptyOutDir : undefined,
     nextConfig: await findVinextNextConfigInPlugins(loaded?.config.plugins),
     prerenderConfig: await findVinextPrerenderConfigInPlugins(loaded?.config.plugins),
@@ -516,12 +521,20 @@ async function buildApp() {
   const isApp =
     !routeRootConfig?.disableAppRouter &&
     (routeRootConfig?.appDir
-      ? fs.existsSync(path.join(path.resolve(root, routeRootConfig.appDir), "app"))
-      : hasAppDir(root));
+      ? fs.existsSync(
+          path.join(path.resolve(buildConfigMetadata.effectiveRoot, routeRootConfig.appDir), "app"),
+        )
+      : hasAppDir(buildConfigMetadata.effectiveRoot));
   const rawNextConfig = buildConfigMetadata.nextConfig
     ? await resolveNextConfigInput(buildConfigMetadata.nextConfig, PHASE_PRODUCTION_BUILD)
-    : await loadNextConfig(root, PHASE_PRODUCTION_BUILD);
-  const resolvedNextConfig = await resolveNextConfig(rawNextConfig, root, { hasAppDir: isApp });
+    : await loadNextConfig(buildConfigMetadata.effectiveRoot, PHASE_PRODUCTION_BUILD);
+  const resolvedNextConfig = await resolveNextConfig(
+    rawNextConfig,
+    buildConfigMetadata.effectiveRoot,
+    {
+      hasAppDir: isApp,
+    },
+  );
 
   // Coordinate a single build ID across every vinext() plugin instance in this
   // build. A hybrid app+pages build runs the App Router multi-environment build
@@ -619,7 +632,7 @@ async function buildApp() {
   // use createBuilder + buildApp(). vinext() defines the appropriate environments
   // in its config() hook for each case, so cloudflare() and the plain Node SSR
   // build both work correctly.
-  const isHybrid = isApp && hasPagesDir();
+  const isHybrid = isApp && hasPagesDir(buildConfigMetadata.effectiveRoot);
   const pagesClientAssetsBuildSession = isHybrid ? randomBytes(16).toString("hex") : null;
   if (pagesClientAssetsBuildSession) {
     process.env.__VINEXT_PAGES_CLIENT_ASSETS_BUILD_SESSION = pagesClientAssetsBuildSession;

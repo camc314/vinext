@@ -13,16 +13,25 @@ describe("hybrid i18n API handoff", () => {
   it.each([
     ["disabled", false],
     ["custom", true],
+    ["vite-root", true],
   ] as const)(
     "scopes the CLI build warning for %s App Router",
     async (variant, shouldWarn) => {
       const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, `vinext-cli-i18n-${variant}-`);
       try {
-        if (variant === "custom") {
-          await fs.mkdir(path.join(fixtureRoot, "custom"));
-          await fs.rename(path.join(fixtureRoot, "app"), path.join(fixtureRoot, "custom", "app"));
+        if (variant !== "disabled") {
+          const routeRoot = path.join(fixtureRoot, variant === "custom" ? "custom" : "frontend");
+          await fs.mkdir(routeRoot);
+          await fs.rename(path.join(fixtureRoot, "app"), path.join(routeRoot, "app"));
+          if (variant === "vite-root") {
+            await fs.rename(path.join(fixtureRoot, "pages"), path.join(routeRoot, "pages"));
+          }
+          const configPath = path.join(
+            variant === "vite-root" ? routeRoot : fixtureRoot,
+            "next.config.mjs",
+          );
           await fs.writeFile(
-            path.join(fixtureRoot, "next.config.mjs"),
+            configPath,
             `export default {
             i18n: { locales: ["en", "fr"], defaultLocale: "en" },
             async redirects() { console.error("cli-preflight-config-resolved"); return []; },
@@ -32,10 +41,13 @@ describe("hybrid i18n API handoff", () => {
         const vinextUrl = pathToFileURL(
           path.resolve(import.meta.dirname, "../packages/vinext/dist/index.js"),
         ).href;
-        const options = variant === "disabled" ? { disableAppRouter: true } : { appDir: "custom" };
+        const options =
+          variant === "disabled"
+            ? { disableAppRouter: true }
+            : { appDir: variant === "custom" ? "custom" : "." };
         await fs.writeFile(
           path.join(fixtureRoot, "vite.config.mjs"),
-          `import vinext from ${JSON.stringify(vinextUrl)};\nexport default { plugins: [vinext(${JSON.stringify(options)})] };\n`,
+          `import vinext from ${JSON.stringify(vinextUrl)};\nexport default { ${variant === "vite-root" ? 'root: "frontend", ' : ""}plugins: [vinext(${JSON.stringify(options)})] };\n`,
         );
         const result = spawnSync(
           process.execPath,
@@ -43,12 +55,16 @@ describe("hybrid i18n API handoff", () => {
           { cwd: fixtureRoot, encoding: "utf8", timeout: 60000 },
         );
         expect(result.status, result.stderr).toBe(0);
+        if (variant === "vite-root") {
+          expect(result.stdout).toContain("Building Pages Router server (hybrid)");
+        }
         expect(
           (result.stdout + result.stderr).match(
             /i18n configuration in next.config.mjs is unsupported in App Router/g,
           ) ?? [],
+          `${result.stdout}\n${result.stderr}`,
         ).toHaveLength(shouldWarn ? 1 : 0);
-        if (variant === "custom") {
+        if (variant !== "disabled") {
           expect(result.stderr.indexOf("i18n configuration in next.config.mjs")).toBeLessThan(
             result.stderr.indexOf("cli-preflight-config-resolved"),
           );
