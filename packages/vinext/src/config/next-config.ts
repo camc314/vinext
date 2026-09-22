@@ -1026,6 +1026,12 @@ function warnConfigOnce(message: string): void {
 
 function warnDeprecatedConfigOptions(config: NextConfig, root: string): void {
   const configFileName = path.basename(findNextConfigPath(root) ?? "next.config.js");
+  if (config.i18n && ["app", "src/app"].some((dir) => fs.existsSync(path.join(root, dir)))) {
+    warnConfigOnce(
+      `i18n configuration in ${configFileName} is unsupported in App Router.\nLearn more about internationalization in App Router: https://nextjs.org/docs/app/building-your-application/routing/internationalization`,
+    );
+  }
+
   const warnings = [
     [
       "experimental.middlewarePrefetch",
