@@ -666,10 +666,11 @@ function resolveParentAlternates(
     const values = resolved[key];
     if (!isPlainObject(values)) continue;
     resolved[key] = Object.fromEntries(
-      Object.entries(values).map(([name, value]) => [
-        name,
-        typeof value === "string" ? [{ url: value }] : value,
-      ]),
+      Object.entries(values)
+        .filter(
+          ([, value]) => typeof value === "string" || (Array.isArray(value) && value.length > 0),
+        )
+        .map(([name, value]) => [name, typeof value === "string" ? [{ url: value }] : value]),
     );
   }
   return resolved as Metadata["alternates"];
@@ -681,7 +682,7 @@ function formatRobots(value: unknown): string {
   const parts: string[] = [];
   for (const [key, entry] of Object.entries(value)) {
     if (entry === true) parts.push(key);
-    else if (entry === false) parts.push(`no${key}`);
+    else if (entry === false && (key === "index" || key === "follow")) parts.push(`no${key}`);
     else if (typeof entry === "string" || typeof entry === "number") parts.push(`${key}:${entry}`);
   }
   return parts.join(", ");

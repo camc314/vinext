@@ -108,6 +108,42 @@ describe("generateMetadata parent values", () => {
     expect(renderMetadataToHtml(result!)).toContain('name="robots" content="noindex, follow"');
   });
 
+  it("omits false robots directives other than index and follow from parent and HTML", async () => {
+    const result = await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const { robots } = await resolving;
+          expect(robots).toEqual({
+            basic: "noindex, nofollow, max-snippet:0",
+            googleBot: "noindex, follow, max-video-preview:0",
+          });
+          return { robots };
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve({
+        robots: {
+          index: false,
+          follow: false,
+          noarchive: false,
+          nosnippet: false,
+          "max-snippet": 0,
+          googleBot: {
+            index: false,
+            follow: true,
+            noimageindex: false,
+            "max-video-preview": 0,
+          },
+        },
+      }),
+    );
+    const html = renderMetadataToHtml(result!);
+    expect(html).toContain('name="robots" content="noindex, nofollow, max-snippet:0"');
+    expect(html).toContain('name="googlebot" content="noindex, follow, max-video-preview:0"');
+    expect(html).not.toContain("nonoarchive");
+  });
+
   it("does not let child mutations change nested ancestor metadata", async () => {
     const parent = {
       authors: [{ name: "Original" }],
@@ -238,6 +274,48 @@ describe("generateMetadata parent values", () => {
     );
     expect(parent.alternates.canonical).toBe("./");
     expect(parent.alternates.languages.en).toBe("./en");
+  });
+
+  it("omits null and empty alternate entries from the resolved parent", async () => {
+    const parent: Metadata = {
+      metadataBase: new URL("https://example.com"),
+      alternates: {
+        languages: { en: null, fr: [], de: "./de" },
+        media: { print: null, screen: "./screen" },
+        types: {
+          "application/rss+xml": [],
+          "application/json": [{ url: "./feed", title: "Feed" }],
+        },
+      },
+    };
+    const result = await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const { alternates } = await resolving;
+          expect(alternates?.languages).toEqual({
+            de: [{ url: "https://example.com/article/de" }],
+          });
+          expect(alternates?.media).toEqual({
+            screen: [{ url: "https://example.com/article/screen" }],
+          });
+          expect(alternates?.types).toEqual({
+            "application/json": [{ url: "https://example.com/article/feed", title: "Feed" }],
+          });
+          return { alternates };
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve(parent),
+      undefined,
+      "/article",
+    );
+    const html = renderMetadataToHtml(result!, "/article");
+    expect(html).toContain('hreflang="de"');
+    expect(html).toContain('media="screen"');
+    expect(html).toContain('type="application/json"');
+    expect(html).not.toContain('hreflang="en"');
+    expect(parent.alternates?.languages?.en).toBeNull();
   });
 
   it("drops canonical titles while keeping titles on alternate descriptor arrays", async () => {
