@@ -115,6 +115,11 @@ test.describe("Next.js compat: metadata (browser)", () => {
     await expect(page).toHaveTitle("Extra Page | Layout");
   });
 
+  test("parallel slot layout template does not apply to its colocated page", async ({ page }) => {
+    await page.goto(`${BASE}/nextjs-compat/metadata-parallel-title-template`);
+    await expect(page).toHaveTitle("Slot Page");
+  });
+
   // Next.js: 'should support opengraph tags'
   // Source: metadata.test.ts#L175-L211
   test("OpenGraph meta tags present in DOM", async ({ page }) => {

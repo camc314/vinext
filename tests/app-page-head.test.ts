@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import path from "node:path";
+import { buildAppRouteGraph } from "../packages/vinext/src/routing/app-route-graph.js";
+import { createValidFileMatcher } from "../packages/vinext/src/routing/file-matcher.js";
 import {
   collectAppPageSearchParams,
   prepareAppPageHead,
@@ -64,24 +67,37 @@ describe("app page head resolution", () => {
   );
 
   it("does not apply a colocated parallel layout template to its slot page", async () => {
+    const appDir = path.resolve(import.meta.dirname, "fixtures/app-basic/app");
+    const graph = await buildAppRouteGraph(appDir, createValidFileMatcher());
+    const route = graph.routes.find(
+      (entry) => entry.pattern === "/nextjs-compat/metadata-parallel-title-template",
+    );
+    const slot = route?.parallelSlots.find((entry) => entry.name === "slot");
+    expect(slot?.routeSegments).toEqual([]);
+    expect(route?.routeSegments).toEqual(["nextjs-compat", "metadata-parallel-title-template"]);
+
+    const parallelRoutes = resolveActiveParallelRouteHeadInputs({
+      layoutTreePositions: route!.layoutTreePositions,
+      params: {},
+      routeSegments: route!.routeSegments,
+      slots: {
+        slot: {
+          layout: { metadata: { title: { default: "Slot", template: "%s | Slot" } } },
+          layoutIndex: slot!.layoutIndex,
+          page: { metadata: { title: "Slot Page" } },
+          routeSegments: slot!.routeSegments,
+        },
+      },
+    });
     const result = await resolveAppPageHead<Record<string, unknown>>({
-      layoutModules: [],
+      layoutModules: [{ metadata: { title: { default: "Ancestor", template: "%s | Ancestor" } } }],
+      layoutTreePositions: [0],
       metadataRoutes: [],
       pageModule: {},
-      parallelRoutes: [
-        {
-          layoutModules: [
-            { metadata: { title: { default: "Ancestor", template: "%s | Ancestor" } } },
-            { metadata: { title: { default: "Slot", template: "%s | Slot" } } },
-          ],
-          layoutTreePositions: [0, 2],
-          pageModule: { metadata: { title: "Slot Page" } },
-          routeSegments: ["dashboard", "@slot"],
-        },
-      ],
+      parallelRoutes: parallelRoutes.map((entry) => entry.head),
       params: {},
-      routePath: "/dashboard",
-      routeSegments: ["dashboard"],
+      routePath: route!.pattern,
+      routeSegments: route!.routeSegments,
     });
 
     expect(result.metadata?.title).toBe("Slot Page | Ancestor");
