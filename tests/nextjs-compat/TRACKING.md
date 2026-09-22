@@ -389,19 +389,19 @@ Three Playwright spec files cover client-side behaviors that cannot be tested vi
 | 21. prefetch           | 3      | 3      | 0     | 0     | Done   |
 | 24. external-redirect  | 1      | 0      | 1     | 0     | Done   |
 | 25. search-params-key  | 2      | 2      | 0     | 0     | Done   |
-| **Total**              | **46** | **38** | **8** | **0** |        |
+| **Total**              | **46** | **41** | **5** | **0** |        |
 
 ### Combined Key Metrics
 
-- **400 tests passing** (362 Vitest + 38 Playwright) across 35 test files
-- **11 tests skipped** (6 Vitest + 5 Playwright) with detailed root-cause analysis and fix locations
+- **407 tests passing** (366 Vitest + 41 Playwright) in the tracked summary
+- **7 tests skipped** (2 Vitest + 5 Playwright)
 - **0 failures** — all non-skipped tests pass
 - **188+ N/A** — build-only, or already covered by existing tests
 - **2 new issues found** in Phase 3: duplicate title with Suspense layout, external redirect in server actions
 
 ### Issues Found (Fix Backlog)
 
-1. **RSC module caching across requests** — `Date.now()` cached in dev. Fix: `packages/vinext/src/entries/app-rsc-entry.ts`
+1. ~~**RSC module caching across requests** — `Date.now()` cached in dev.~~ **WITHDRAWN**: The restored test confirms fresh layout and page timestamps across dev requests within the 1s revalidation window; no runtime fix is indicated.
 2. ~~**Server component errors return 500 instead of rendering error.tsx**~~ — **FIXED**. Added `renderErrorBoundaryPage()` in `entries/app-rsc-entry.ts` that renders the nearest error.tsx wrapped in layouts when a server component throws. Catches errors in `buildPageElement` catch (metadata errors) and SSR catch (render errors). Returns 200 with error boundary HTML.
 3. ~~**generateMetadata() errors bypass error.tsx**~~ — **FIXED**. Same fix as #2 — the `buildPageElement` catch now calls `renderErrorBoundaryPage()` for non-special errors from `generateMetadata()`.
 4. ~~**React `use()` hook warning**~~ — **FIXED**. Not duplicate React — the pre-render check (`entries/app-rsc-entry.ts:1268`) calls `PageComponent()` directly outside React's render cycle, triggering "Invalid hook call" for components using `use()`. Fix: suppress the expected warning during the pre-render test.
