@@ -167,29 +167,6 @@ describe("app page head resolution", () => {
     expect(result.metadata?.title).toBe("Article | Acme");
   });
 
-  it("does not pass an older template through a layout with a plain title", async () => {
-    let parentTitle: unknown;
-    const result = await resolveAppPageHead<Record<string, unknown>>({
-      layoutModules: [
-        { metadata: { title: { default: "Acme", template: "%s | Acme" } } },
-        { metadata: { title: "Section" } },
-      ],
-      layoutTreePositions: [0, 1],
-      metadataRoutes: [],
-      pageModule: {
-        async generateMetadata(_props: unknown, resolving: Promise<{ title: unknown }>) {
-          parentTitle = (await resolving).title;
-          return { title: "Article" };
-        },
-      },
-      params: {},
-      routePath: "/section/article",
-      routeSegments: ["section", "article"],
-    });
-    expect(parentTitle).toEqual({ absolute: "Section | Acme", template: undefined });
-    expect(result.metadata?.title).toBe("Article");
-  });
-
   it("collects repeated search params into a null-prototype object", () => {
     const { hasSearchParams, pageSearchParams } = collectAppPageSearchParams(
       new URLSearchParams("__proto__=safe&tag=a&tag=b"),

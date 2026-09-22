@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { resolveAppPageHead } from "../packages/vinext/src/server/app-page-head.js";
 import {
   renderMetadataToHtml,
   resolveModuleMetadata,
@@ -8,6 +9,29 @@ import {
 // Ported from Next.js: test/e2e/app-dir/metadata/metadata.test.ts
 // https://github.com/vercel/next.js/blob/v16.2.6/test/e2e/app-dir/metadata/metadata.test.ts
 describe("generateMetadata parent values", () => {
+  it("exposes a plain leaf title without its ancestor template while rendering the page", async () => {
+    let parentTitle: unknown;
+    const result = await resolveAppPageHead<Record<string, unknown>>({
+      layoutModules: [
+        { metadata: { title: { default: "Acme", template: "%s | Acme" } } },
+        { metadata: { title: "Section" } },
+      ],
+      layoutTreePositions: [0, 1],
+      metadataRoutes: [],
+      pageModule: {
+        async generateMetadata(_props: unknown, resolving: Promise<{ title: unknown }>) {
+          parentTitle = (await resolving).title;
+          return { title: "Article" };
+        },
+      },
+      params: {},
+      routePath: "/section",
+      routeSegments: ["section"],
+    });
+    expect(parentTitle).toEqual({ absolute: "Section | Acme", template: null });
+    expect(result.metadata?.title).toBe("Article | Acme");
+  });
+
   it("supplies keyword arrays and string URLs to child resolvers", async () => {
     const result = await resolveModuleMetadata(
       {
@@ -167,6 +191,86 @@ describe("generateMetadata parent values", () => {
     );
     expect(renderMetadataToHtml(result!, "/article")).toContain(
       'rel="canonical" href="https://other.example/article?ref=source"',
+    );
+  });
+
+  it("supplies canonical and alternate descriptors for scalar parent URLs", async () => {
+    const parent = {
+      metadataBase: new URL("https://example.com"),
+      alternates: {
+        canonical: "./",
+        languages: { en: "./en" },
+        media: { print: "./print" },
+        types: { "application/rss+xml": "./feed" },
+      },
+    };
+    const result = await resolveModuleMetadata(
+      {
+        async generateMetadata(
+          _props: unknown,
+          resolving: Promise<{
+            alternates: {
+              canonical: { url: string };
+              languages: { en: Array<{ url: string }> };
+              media: { print: Array<{ url: string }> };
+              types: { "application/rss+xml": Array<{ url: string }> };
+            };
+          }>,
+        ) {
+          const { alternates } = await resolving;
+          expect(alternates.canonical).toEqual({ url: "https://example.com/article" });
+          expect(alternates.languages.en).toEqual([{ url: "https://example.com/article/en" }]);
+          expect(alternates.media.print).toEqual([{ url: "https://example.com/article/print" }]);
+          expect(alternates.types["application/rss+xml"]).toEqual([
+            { url: "https://example.com/article/feed" },
+          ]);
+          return { alternates };
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve(parent),
+      undefined,
+      "/article",
+    );
+    expect(renderMetadataToHtml(result!, "/article")).toContain(
+      'rel="canonical" href="https://example.com/article"',
+    );
+    expect(parent.alternates.canonical).toBe("./");
+    expect(parent.alternates.languages.en).toBe("./en");
+  });
+
+  it("drops canonical titles while keeping titles on alternate descriptor arrays", async () => {
+    await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const alternates = (await resolving).alternates;
+          expect(alternates?.canonical).toEqual({ url: "https://example.com/article" });
+          expect(alternates?.languages?.en).toEqual([
+            { url: "https://example.com/article/en", title: "English" },
+          ]);
+          expect(alternates?.media?.print).toEqual([
+            { url: "https://example.com/article/print", title: "Print" },
+          ]);
+          expect(alternates?.types?.["application/rss+xml"]).toEqual([
+            { url: "https://example.com/article/feed", title: "Feed" },
+          ]);
+          return {};
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve({
+        metadataBase: new URL("https://example.com"),
+        alternates: {
+          canonical: { url: "./", title: "Ignored" },
+          languages: { en: [{ url: "./en", title: "English" }] },
+          media: { print: [{ url: "./print", title: "Print" }] },
+          types: { "application/rss+xml": [{ url: "./feed", title: "Feed" }] },
+        },
+      }),
+      undefined,
+      "/article",
     );
   });
 });

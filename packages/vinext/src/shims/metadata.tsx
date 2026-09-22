@@ -176,7 +176,7 @@ function resolveThemeColor(themeColor: Viewport["themeColor"]): ResolvedViewport
 // ---------------------------------------------------------------------------
 
 export type Metadata = {
-  title?: string | { default?: string; template?: string; absolute?: string };
+  title?: string | { default?: string; template?: string | null; absolute?: string };
   description?: string;
   generator?: string;
   applicationName?: string;
@@ -537,6 +537,7 @@ export function mergeMetadataEntries(
 
   // Track the most recent ancestor title template from layouts (not from page).
   let parentTemplate: string | undefined;
+  let parentVisibleTemplate: string | null = null;
 
   for (const entry of entries) {
     const meta = entry.metadata;
@@ -566,13 +567,17 @@ export function mergeMetadataEntries(
     // Collect the current layout template after resolving its own title so
     // title.default is wrapped by the ancestor template, not by its own template.
     if (contributesTitle && !isPage && meta.title !== undefined) {
-      parentTemplate =
-        meta.title && typeof meta.title === "object" ? meta.title.template : undefined;
+      parentVisibleTemplate =
+        meta.title && typeof meta.title === "object" ? (meta.title.template ?? null) : null;
+      if (parentVisibleTemplate) parentTemplate = parentVisibleTemplate;
     }
   }
 
   if (forParent && merged.title != null) {
-    merged.title = { absolute: resolveStringTitle(merged.title) ?? "", template: parentTemplate };
+    merged.title = {
+      absolute: resolveStringTitle(merged.title) ?? "",
+      template: parentVisibleTemplate,
+    };
   }
   return merged;
 }
@@ -583,11 +588,7 @@ function resolveParentMetadataValues(metadata: Metadata, pathname?: string): Met
   const resolved = cloneParentMetadataValues(metadata) as Metadata;
   if (pathname && metadata.alternates) {
     const base = metadata.metadataBase ? new URL(metadata.metadataBase.toString()) : undefined;
-    resolved.alternates = resolveParentAlternateUrls(
-      metadata.alternates,
-      base,
-      pathname,
-    ) as Metadata["alternates"];
+    resolved.alternates = resolveParentAlternates(metadata.alternates, base, pathname);
   }
   for (const key of ["keywords", "authors", "archives", "assets", "bookmarks"] as const) {
     const value = metadata[key];
@@ -598,7 +599,7 @@ function resolveParentMetadataValues(metadata: Metadata, pathname?: string): Met
   if (metadata.title != null) {
     resolved.title = {
       absolute: resolveStringTitle(metadata.title),
-      template: typeof metadata.title === "object" ? metadata.title.template : undefined,
+      template: typeof metadata.title === "object" ? (metadata.title.template ?? null) : null,
     };
   }
   if (metadata.robots != null) {
@@ -644,6 +645,34 @@ function resolveParentAlternateUrls(
     );
   }
   return value;
+}
+
+function resolveParentAlternates(
+  alternates: NonNullable<Metadata["alternates"]>,
+  base: URL | undefined,
+  pathname: string,
+): Metadata["alternates"] {
+  const resolved = resolveParentAlternateUrls(alternates, base, pathname) as Record<
+    string,
+    unknown
+  >;
+  const canonical = resolved.canonical;
+  if (typeof canonical === "string") {
+    resolved.canonical = { url: canonical };
+  } else if (isPlainObject(canonical) && typeof canonical.url === "string") {
+    resolved.canonical = { url: canonical.url };
+  }
+  for (const key of ["languages", "media", "types"] as const) {
+    const values = resolved[key];
+    if (!isPlainObject(values)) continue;
+    resolved[key] = Object.fromEntries(
+      Object.entries(values).map(([name, value]) => [
+        name,
+        typeof value === "string" ? [{ url: value }] : value,
+      ]),
+    );
+  }
+  return resolved as Metadata["alternates"];
 }
 
 function formatRobots(value: unknown): string {
