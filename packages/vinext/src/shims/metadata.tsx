@@ -573,6 +573,22 @@ export function mergeMetadataEntries(entries: readonly MetadataMergeEntry[]): Me
   return merged;
 }
 
+// Next.js supplies resolved array values and string URLs to generateMetadata,
+// even when an ancestor exported scalar keywords or a URL metadataBase.
+function resolveParentMetadataValues(metadata: Metadata): Metadata {
+  const resolved = { ...metadata };
+  if (resolved.metadataBase instanceof URL) {
+    resolved.metadataBase = resolved.metadataBase.toString();
+  }
+  for (const key of ["keywords", "authors", "archives", "assets", "bookmarks"] as const) {
+    const value = metadata[key];
+    if (value != null) {
+      Object.assign(resolved, { [key]: Array.isArray(value) ? [...value] : [value] });
+    }
+  }
+  return resolved;
+}
+
 /**
  * Resolve metadata from a module. Handles both static `metadata` export
  * and async `generateMetadata()` function.
@@ -617,7 +633,9 @@ export async function resolveModuleMetadata(
       (typeof acceptsSecondArgument === "boolean"
         ? acceptsSecondArgument
         : generateMetadata.length >= 2);
-    return await (passesParent ? generateMetadata(props, parent) : generateMetadata(props));
+    return await (passesParent
+      ? generateMetadata(props, parent.then(resolveParentMetadataValues))
+      : generateMetadata(props));
   }
   if (mod.metadata && typeof mod.metadata === "object") {
     return mod.metadata as Metadata;
