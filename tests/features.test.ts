@@ -2682,6 +2682,35 @@ describe("MetadataHead rendering", () => {
     renderToStaticMarkup = (await import("react-dom/server")).renderToStaticMarkup;
   });
 
+  // Ported from Next.js: test/e2e/app-dir/metadata/metadata.test.ts
+  // https://github.com/vercel/next.js/blob/v16.2.6/test/e2e/app-dir/metadata/metadata.test.ts
+  it("renders mixed Apple startup images and social account metadata", () => {
+    const html = renderMetadataToHtml({
+      appleWebApp: {
+        startupImage: ["/startup.png", { url: "/tablet.png", media: "(min-width: 768px)" }],
+      },
+      facebook: { appId: "12345678", admins: ["120", "122", "124"] },
+      pinterest: { richPin: true },
+    });
+    expect(html).toContain('rel="apple-touch-startup-image" href="/startup.png"');
+    expect(html).toContain('href="/tablet.png" media="(min-width: 768px)"');
+    expect(html).toContain('name="apple-mobile-web-app-status-bar-style" content="default"');
+    expect(html).toContain('property="fb:app_id" content="12345678"');
+    for (const admin of ["120", "122", "124"]) {
+      expect(html).toContain(`property="fb:admins" content="${admin}"`);
+    }
+    expect(html).toContain('property="pinterest-rich-pin" content="true"');
+  });
+
+  it("renders scalar Facebook admins and explicit false Pinterest metadata", () => {
+    const html = renderMetadataToHtml({
+      facebook: { admins: "120" },
+      pinterest: { richPin: false },
+    });
+    expect(html).toContain('property="fb:admins" content="120"');
+    expect(html).toContain('property="pinterest-rich-pin" content="false"');
+  });
+
   function metadataRouteImage(url: string): { url: string } {
     const image = { url };
     Object.defineProperty(image, "metadataRoute", { value: true });
