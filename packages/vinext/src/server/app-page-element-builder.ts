@@ -515,6 +515,7 @@ export async function buildPageElements<
       ...resolveNotFoundFallbackPlanOptions(),
       metadataRoutes,
       routePath: route.pattern,
+      trailingSlash: options.trailingSlash,
     }).catch(() => null);
   };
   const [resolvedMetadata, resolvedViewport] = await Promise.all([

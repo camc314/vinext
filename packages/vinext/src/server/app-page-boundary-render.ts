@@ -670,6 +670,7 @@ export async function renderAppPageHttpAccessFallback<TModule extends AppPageMod
           ...fallbackHeadOptions,
           metadataRoutes: options.metadataRoutes,
           routePath: options.route?.pattern ?? pathname,
+          trailingSlash: options.trailingSlash,
         }),
         resolveHttpAccessFallbackViewport(fallbackHeadOptions),
       ]);
