@@ -72,6 +72,14 @@ describe("Next.js compat: metadata", () => {
     expect(html).toContain("<title>Extra Page | Layout</title>");
   });
 
+  it("should scope templates to descendant segments through route groups", async () => {
+    const grouped = await fetchHtml(baseUrl, "/nextjs-compat/metadata-title-template/grouped");
+    expect(grouped.html).toContain("<title>Grouped Page | Layout</title>");
+
+    const child = await fetchHtml(baseUrl, "/nextjs-compat/metadata-title-template/grouped/child");
+    expect(child.html).toContain("<title>Grouped Child | Grouped Layout</title>");
+  });
+
   // ── Basic metadata tags ──────────────────────────────────────
   // Next.js: 'should support other basic tags'
   // Source: https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/metadata/metadata.test.ts#L52-L89
