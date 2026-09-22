@@ -2711,6 +2711,57 @@ describe("MetadataHead rendering", () => {
     expect(html).toContain('property="pinterest-rich-pin" content="false"');
   });
 
+  it("preserves Apple startup image URLs with metadataBase and escapes their attributes", () => {
+    const metadata = {
+      metadataBase: new URL("https://example.com/base"),
+      appleWebApp: {
+        startupImage: [
+          '/startup?next="<x>&a=1',
+          { url: "/tablet.png", media: '(min-width: 768px) & "wide"' },
+        ],
+      },
+    };
+    for (const html of [
+      renderMetadataToHtml(metadata),
+      renderToStaticMarkup(React.createElement(MetadataHead, { metadata })),
+    ]) {
+      expect(html).toContain('href="/startup?next=&quot;&lt;x&gt;&amp;a=1"');
+      expect(html).toContain('href="/tablet.png"');
+      expect(html).toContain('media="(min-width: 768px) &amp; &quot;wide&quot;"');
+      expect(html).not.toContain('href="https://example.com/base');
+      expect(html.indexOf('href="/tablet.png"')).toBeLessThan(
+        html.indexOf('name="apple-mobile-web-app-status-bar-style"'),
+      );
+    }
+  });
+
+  it("renders an empty Facebook admin and places social tags after iTunes", () => {
+    const html = renderMetadataToHtml({
+      itunes: { appId: "123" },
+      facebook: { admins: "" },
+      pinterest: { richPin: false },
+    });
+    expect(html).toContain('property="fb:admins" content=""');
+    expect(html.indexOf('name="apple-itunes-app"')).toBeLessThan(
+      html.indexOf('property="fb:admins"'),
+    );
+  });
+
+  it("escapes Facebook attribute values in both metadata rendering paths", () => {
+    const metadata = {
+      facebook: { appId: 'app"&<id>', admins: ['admin"&<id>'] },
+      pinterest: { richPin: false },
+    };
+    for (const html of [
+      renderMetadataToHtml(metadata),
+      renderToStaticMarkup(React.createElement(MetadataHead, { metadata })),
+    ]) {
+      expect(html).toContain('property="fb:app_id" content="app&quot;&amp;&lt;id&gt;"');
+      expect(html).toContain('property="fb:admins" content="admin&quot;&amp;&lt;id&gt;"');
+      expect(html).not.toContain("<id>");
+    }
+  });
+
   function metadataRouteImage(url: string): { url: string } {
     const image = { url };
     Object.defineProperty(image, "metadataRoute", { value: true });
