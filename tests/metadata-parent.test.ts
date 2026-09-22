@@ -317,6 +317,30 @@ describe("generateMetadata parent values", () => {
     expect(parent.openGraph.images[0].url).toBeInstanceOf(URL);
   });
 
+  it("exposes scalar App Links as arrays without mutating the ancestor", async () => {
+    const parent = {
+      appLinks: {
+        ios: { url: new URL("https://example.com/app"), app_store_id: "123" },
+        android: { package: "com.example.app" },
+      },
+    };
+    await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const appLinks = (await resolving).appLinks;
+          expect(appLinks?.ios).toEqual([{ url: "https://example.com/app", app_store_id: "123" }]);
+          expect(appLinks?.android).toEqual([{ package: "com.example.app" }]);
+          return {};
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve(parent),
+    );
+    expect(parent.appLinks.ios).not.toBeInstanceOf(Array);
+    expect(parent.appLinks.ios.url).toBeInstanceOf(URL);
+  });
+
   it("preserves URL-instance canonical resolution when children spread parent metadata", async () => {
     const result = await resolveModuleMetadata(
       {

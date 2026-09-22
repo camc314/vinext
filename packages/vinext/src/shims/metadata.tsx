@@ -619,6 +619,14 @@ function resolveParentMetadataValues(
       Object.assign(resolved, { [key]: Array.isArray(value) ? resolved[key] : [resolved[key]] });
     }
   }
+  if (resolved.appLinks) {
+    resolved.appLinks = Object.fromEntries(
+      Object.entries(resolved.appLinks).map(([key, value]) => [
+        key,
+        value == null || Array.isArray(value) ? value : [value],
+      ]),
+    ) as Metadata["appLinks"];
+  }
   if (metadata.title != null) {
     resolved.title = {
       absolute: resolveStringTitle(metadata.title) ?? "",
