@@ -222,10 +222,10 @@ export type Metadata = {
   icons?: IconsMetadata;
   manifest?: string | URL;
   alternates?: {
-    canonical?: string | URL;
-    languages?: Record<string, string | URL>;
-    media?: Record<string, string | URL>;
-    types?: Record<string, string | URL>;
+    canonical?: string | URL | AlternateLinkDescriptor | null;
+    languages?: Record<string, AlternateLinkValue>;
+    media?: Record<string, AlternateLinkValue>;
+    types?: Record<string, AlternateLinkValue>;
   };
   verification?: {
     google?: string;
@@ -233,7 +233,7 @@ export type Metadata = {
     yandex?: string;
     other?: Record<string, string | string[]>;
   };
-  metadataBase?: URL | null;
+  metadataBase?: string | URL | null;
   appleWebApp?: {
     capable?: boolean;
     title?: string;
@@ -308,6 +308,9 @@ type TwitterAppDescriptor = {
   };
   name?: string;
 };
+
+type AlternateLinkDescriptor = { url: string | URL; title?: string };
+type AlternateLinkValue = string | URL | AlternateLinkDescriptor[] | null | undefined;
 
 type SocialImageDescriptor = {
   url: string | URL;
@@ -916,6 +919,7 @@ function renderMetadataElementToHtml(node: unknown): string {
         "data-vinext-streamed-icon",
         "rel",
         "href",
+        "title",
         "hrefLang",
         "type",
         "sizes",
@@ -953,7 +957,10 @@ export function MetadataHead({
   let key = 0;
 
   // Resolve metadataBase for URL composition
-  const base = metadata.metadataBase;
+  const base =
+    typeof metadata.metadataBase === "string"
+      ? new URL(metadata.metadataBase)
+      : metadata.metadataBase;
   function resolveUrl(url: string | URL): string;
   function resolveUrl(url: string | URL | undefined): string | undefined;
   function resolveUrl(url: string | URL | undefined): string | undefined {
@@ -1307,44 +1314,38 @@ export function MetadataHead({
         <link
           key={key++}
           rel="canonical"
-          href={resolveCanonicalUrl(alt.canonical, base, pathname, trailingSlash)}
+          href={resolveCanonicalUrl(
+            typeof alt.canonical === "object" && !(alt.canonical instanceof URL)
+              ? alt.canonical.url
+              : alt.canonical,
+            base,
+            pathname,
+            trailingSlash,
+          )}
         />,
       );
     }
-    if (alt.languages) {
-      for (const [lang, href] of Object.entries(alt.languages)) {
-        elements.push(
-          <link
-            key={key++}
-            rel="alternate"
-            hrefLang={lang}
-            href={resolveAlternateUrl(href, base, pathname, trailingSlash)}
-          />,
-        );
-      }
-    }
-    if (alt.media) {
-      for (const [media, href] of Object.entries(alt.media)) {
-        elements.push(
-          <link
-            key={key++}
-            rel="alternate"
-            media={media}
-            href={resolveAlternateUrl(href, base, pathname, trailingSlash)}
-          />,
-        );
-      }
-    }
-    if (alt.types) {
-      for (const [type, href] of Object.entries(alt.types)) {
-        elements.push(
-          <link
-            key={key++}
-            rel="alternate"
-            type={type}
-            href={resolveAlternateUrl(href, base, pathname, trailingSlash)}
-          />,
-        );
+    for (const [kind, values] of [
+      ["hrefLang", alt.languages],
+      ["media", alt.media],
+      ["type", alt.types],
+    ] as const) {
+      if (!values) continue;
+      for (const [attribute, value] of Object.entries(values)) {
+        if (!value) continue;
+        const descriptors = Array.isArray(value) ? value : [{ url: value }];
+        for (const descriptor of descriptors) {
+          if (!descriptor.url) continue;
+          elements.push(
+            <link
+              key={key++}
+              rel="alternate"
+              href={resolveAlternateUrl(descriptor.url, base, pathname, trailingSlash)}
+              title={descriptor.title || undefined}
+              {...{ [kind]: attribute }}
+            />,
+          );
+        }
       }
     }
   }
