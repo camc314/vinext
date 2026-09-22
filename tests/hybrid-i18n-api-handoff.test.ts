@@ -1,13 +1,55 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createBuilder } from "vite";
-import { describe, expect, it } from "vite-plus/test";
+import { createBuilder, createServer } from "vite";
+import { describe, expect, it, vi } from "vite-plus/test";
 import vinext from "../packages/vinext/src/index.js";
 import { createIsolatedFixture, startFixtureServer } from "./helpers.js";
 
 const FIXTURE_DIR = path.resolve(import.meta.dirname, "fixtures/hybrid-i18n-api-handoff");
 
 describe("hybrid i18n API handoff", () => {
+  it("warns once for an active App Router across dev and build, not for a Pages-only pass", async () => {
+    const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, "vinext-i18n-warning-");
+    await fs.rename(
+      path.join(fixtureRoot, "next.config.mjs"),
+      path.join(fixtureRoot, "next.config.ts"),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const disableAppRouter of [true, false]) {
+        const server = await createServer({
+          root: fixtureRoot,
+          configFile: false,
+          plugins: [vinext({ appDir: fixtureRoot, disableAppRouter })],
+          logLevel: "silent",
+          server: { middlewareMode: true },
+        });
+        await server.close();
+        expect(
+          warn.mock.calls.filter(([message]) =>
+            String(message).includes("unsupported in App Router"),
+          ),
+        ).toHaveLength(disableAppRouter ? 0 : 1);
+      }
+
+      const builder = await createBuilder({
+        root: fixtureRoot,
+        configFile: false,
+        plugins: [vinext({ appDir: fixtureRoot })],
+        logLevel: "silent",
+      });
+      await builder.buildApp();
+      expect(
+        warn.mock.calls.filter(([message]) =>
+          String(message).includes("unsupported in App Router"),
+        ),
+      ).toHaveLength(1);
+    } finally {
+      vi.restoreAllMocks();
+      await fs.rm(fixtureRoot, { recursive: true, force: true });
+    }
+  }, 120000);
+
   // Next.js treats locale normalization and config rewrites as separate routing
   // events. A locale-prefixed API pathname does not claim the unprefixed route.
   // Ported from Next.js: test/e2e/i18n-api-support/index.test.ts

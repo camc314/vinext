@@ -225,6 +225,35 @@ describe("deprecated config warnings", () => {
     }
   });
 
+  it("does not warn when App Router is disabled for a Pages build", async () => {
+    const root = makeTempDir();
+    fs.mkdirSync(path.join(root, "app"));
+    fs.writeFileSync(path.join(root, "next.config.cjs"), "module.exports = {}\n");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await resolveNextConfig({ i18n: { locales: ["en", "fr"], defaultLocale: "en" } }, root, {
+        hasAppDir: false,
+      });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("warns for a configured App Router outside the conventional directories", async () => {
+    const root = makeTempDir();
+    fs.writeFileSync(path.join(root, "next.config.mts"), "export default {}\n");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await resolveNextConfig({ i18n: { locales: ["en", "fr"], defaultLocale: "en" } }, root, {
+        hasAppDir: true,
+      });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("unsupported in App Router"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("resolves both URL-normalization option names", async () => {
     await expect(resolveNextConfig({ skipProxyUrlNormalize: true })).resolves.toMatchObject({
       skipProxyUrlNormalize: true,

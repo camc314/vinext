@@ -516,7 +516,7 @@ async function buildApp() {
   const rawNextConfig = buildConfigMetadata.nextConfig
     ? await resolveNextConfigInput(buildConfigMetadata.nextConfig, PHASE_PRODUCTION_BUILD)
     : await loadNextConfig(root, PHASE_PRODUCTION_BUILD);
-  const resolvedNextConfig = await resolveNextConfig(rawNextConfig, root);
+  const resolvedNextConfig = await resolveNextConfig(rawNextConfig, root, { hasAppDir: isApp });
 
   // Coordinate a single build ID across every vinext() plugin instance in this
   // build. A hybrid app+pages build runs the App Router multi-environment build

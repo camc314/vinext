@@ -1024,9 +1024,9 @@ function warnConfigOnce(message: string): void {
   console.warn(message);
 }
 
-function warnDeprecatedConfigOptions(config: NextConfig, root: string): void {
+function warnDeprecatedConfigOptions(config: NextConfig, root: string, hasAppDir: boolean): void {
   const configFileName = path.basename(findNextConfigPath(root) ?? "next.config.js");
-  if (config.i18n && ["app", "src/app"].some((dir) => fs.existsSync(path.join(root, dir)))) {
+  if (config.i18n && hasAppDir) {
     warnConfigOnce(
       `i18n configuration in ${configFileName} is unsupported in App Router.\nLearn more about internationalization in App Router: https://nextjs.org/docs/app/building-your-application/routing/internationalization`,
     );
@@ -1690,7 +1690,7 @@ function normalizeI18nConfig(value: unknown): NextI18nConfig | null {
 export async function resolveNextConfig(
   config: NextConfig | null,
   root: string = toSlash(process.cwd()),
-  options: { dev?: boolean } = {},
+  options: { dev?: boolean; hasAppDir?: boolean } = {},
 ): Promise<ResolvedNextConfig> {
   if (!config) {
     const buildId = await resolveBuildId(undefined);
@@ -1779,7 +1779,11 @@ export async function resolveNextConfig(
     );
   }
 
-  warnDeprecatedConfigOptions(config, root);
+  warnDeprecatedConfigOptions(
+    config,
+    root,
+    options.hasAppDir ?? ["app", "src/app"].some((dir) => fs.existsSync(path.join(root, dir))),
+  );
 
   const i18n = normalizeI18nConfig(config.i18n);
 

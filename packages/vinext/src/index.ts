@@ -2381,6 +2381,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           }
           nextConfig = await resolveNextConfig(rawConfig, root, {
             dev: env?.command === "serve" && env?.isPreview !== true,
+            hasAppDir,
           });
 
           // Build-ID coordination across plugin instances.
