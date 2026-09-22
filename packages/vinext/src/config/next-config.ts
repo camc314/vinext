@@ -1026,13 +1026,17 @@ function warnConfigOnce(message: string): void {
   console.warn(message);
 }
 
+export function warnUnsupportedAppRouterI18n(config: NextConfig | null, root: string): void {
+  if (!config?.i18n) return;
+  const configFileName = path.basename(findNextConfigPath(root) ?? "next.config.js");
+  warnConfigOnce(
+    `i18n configuration in ${configFileName} is unsupported in App Router.\nLearn more about internationalization in App Router: https://nextjs.org/docs/app/building-your-application/routing/internationalization`,
+  );
+}
+
 function warnDeprecatedConfigOptions(config: NextConfig, root: string, hasAppDir: boolean): void {
   const configFileName = path.basename(findNextConfigPath(root) ?? "next.config.js");
-  if (config.i18n && hasAppDir) {
-    warnConfigOnce(
-      `i18n configuration in ${configFileName} is unsupported in App Router.\nLearn more about internationalization in App Router: https://nextjs.org/docs/app/building-your-application/routing/internationalization`,
-    );
-  }
+  if (hasAppDir) warnUnsupportedAppRouterI18n(config, root);
 
   const warnings = [
     [

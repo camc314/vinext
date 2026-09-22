@@ -79,6 +79,63 @@ describe("hybrid i18n API handoff", () => {
     120000,
   );
 
+  it.each([
+    ["cwd-only", true, false],
+    ["vite-root-only", false, true],
+  ] as const)(
+    "reads the %s i18n warning config from the Vite root",
+    async (variant, cwdI18n, viteRootI18n) => {
+      const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, `vinext-cli-i18n-${variant}-`);
+      try {
+        const frontendRoot = path.join(fixtureRoot, "frontend");
+        await fs.mkdir(frontendRoot);
+        await fs.rename(path.join(fixtureRoot, "app"), path.join(frontendRoot, "app"));
+        await fs.writeFile(
+          path.join(fixtureRoot, "next.config.mjs"),
+          `export default {
+          ${cwdI18n ? 'i18n: { locales: ["en", "fr"], defaultLocale: "en" },' : ""}
+          async redirects() { console.error("cli-build-config-resolved"); return []; },
+        };\n`,
+        );
+        await fs.writeFile(
+          path.join(frontendRoot, "next.config.cjs"),
+          `module.exports = ${viteRootI18n ? '{ i18n: { locales: ["en", "fr"], defaultLocale: "en" } }' : "{}"};\n`,
+        );
+        const vinextUrl = pathToFileURL(
+          path.resolve(import.meta.dirname, "../packages/vinext/dist/index.js"),
+        ).href;
+        await fs.writeFile(
+          path.join(fixtureRoot, "vite.config.mjs"),
+          `import vinext from ${JSON.stringify(vinextUrl)};\nexport default { root: "frontend", plugins: [vinext({ appDir: "." })] };\n`,
+        );
+        const result = spawnSync(
+          process.execPath,
+          [path.resolve(import.meta.dirname, "../packages/vinext/dist/cli.js"), "build"],
+          { cwd: fixtureRoot, encoding: "utf8", timeout: 60000 },
+        );
+        expect(result.status, result.stderr).toBe(0);
+        const warnings =
+          (result.stdout + result.stderr).match(
+            /i18n configuration in next\.config\.[cm]?js is unsupported in App Router/g,
+          ) ?? [];
+        expect(warnings).toEqual(
+          viteRootI18n
+            ? ["i18n configuration in next.config.cjs is unsupported in App Router"]
+            : [],
+        );
+        expect(result.stderr).toContain("cli-build-config-resolved");
+        if (viteRootI18n) {
+          expect(result.stderr.indexOf(warnings[0]!)).toBeLessThan(
+            result.stderr.indexOf("cli-build-config-resolved"),
+          );
+        }
+      } finally {
+        await fs.rm(fixtureRoot, { recursive: true, force: true });
+      }
+    },
+    120000,
+  );
+
   it("warns once for an active App Router across dev and build, not for a Pages-only pass", async () => {
     const fixtureRoot = await createIsolatedFixture(FIXTURE_DIR, "vinext-i18n-warning-");
     await fs.rename(

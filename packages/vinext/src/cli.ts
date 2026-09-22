@@ -38,6 +38,7 @@ import {
   loadNextConfig,
   resolveNextConfig,
   resolveNextConfigInput,
+  warnUnsupportedAppRouterI18n,
   PHASE_PRODUCTION_BUILD,
   type NextConfigInput,
 } from "./config/next-config.js";
@@ -538,8 +539,14 @@ async function buildApp() {
   const rawNextConfig = buildConfigMetadata.nextConfig
     ? await resolveNextConfigInput(buildConfigMetadata.nextConfig, PHASE_PRODUCTION_BUILD)
     : await loadNextConfig(root, PHASE_PRODUCTION_BUILD);
+  if (hasActiveAppRouter && buildConfigMetadata.effectiveRoot !== root) {
+    const diagnosticConfig = buildConfigMetadata.nextConfig
+      ? rawNextConfig
+      : await loadNextConfig(buildConfigMetadata.effectiveRoot, PHASE_PRODUCTION_BUILD);
+    warnUnsupportedAppRouterI18n(diagnosticConfig, buildConfigMetadata.effectiveRoot);
+  }
   const resolvedNextConfig = await resolveNextConfig(rawNextConfig, root, {
-    hasAppDir: hasActiveAppRouter,
+    hasAppDir: hasActiveAppRouter && buildConfigMetadata.effectiveRoot === root,
   });
 
   // Coordinate a single build ID across every vinext() plugin instance in this
