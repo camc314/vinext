@@ -220,6 +220,10 @@ export function resolveActiveParallelRouteHeadInputs<TModule extends AppPageHead
         slot.notFoundTreePosition === 0 ? (slot.notFound ?? null) : null;
       const interceptNotFound = options.interceptNotFound ?? inheritedSlotNotFound;
       const interceptRouteSegments = options.interceptSourcePageSegments ?? options.routeSegments;
+      const interceptBranchOffset =
+        options.interceptSourcePageSegments && options.interceptBranchSegments
+          ? interceptRouteSegments.length - options.interceptBranchSegments.length
+          : null;
       const interceptNotFoundRouteSegments = options.interceptNotFound
         ? (options.interceptNotFoundBranchSegments ?? interceptRouteSegments).slice(
             0,
@@ -262,7 +266,12 @@ export function resolveActiveParallelRouteHeadInputs<TModule extends AppPageHead
           ],
           layoutTreePositions: [
             ...(slot.layout ? [0] : []),
-            ...interceptLayouts.filter(isPresent).map(() => options.routeSegments.length),
+            ...interceptLayouts.filter(isPresent).map((_, index) => {
+              const segments = options.interceptLayoutSegments?.[index];
+              return interceptBranchOffset !== null && segments
+                ? interceptBranchOffset + segments.length
+                : options.routeSegments.length;
+            }),
           ],
           pageModule: options.interceptPage,
           params: options.interceptParams ?? options.params,
