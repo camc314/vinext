@@ -540,6 +540,7 @@ export function mergeMetadataEntries(
   // Track the most recent ancestor title template from layouts (not from page).
   let parentTemplate: string | undefined;
   let parentVisibleTemplate: string | null = null;
+  let parentTitleWasObject = false;
 
   for (const entry of entries) {
     const meta = entry.metadata;
@@ -574,6 +575,7 @@ export function mergeMetadataEntries(
     // Title resolution
     if (contributesTitle && meta.title !== undefined) {
       merged.title = resolveTitle(meta.title, parentTemplate);
+      parentTitleWasObject = meta.title !== null && typeof meta.title === "object";
     }
 
     // Collect the current layout template after resolving its own title so
@@ -585,7 +587,7 @@ export function mergeMetadataEntries(
     }
   }
 
-  if (forParent && merged.title != null) {
+  if (forParent && (merged.title != null || parentTitleWasObject)) {
     merged.title = {
       absolute: resolveStringTitle(merged.title) ?? "",
       template: parentVisibleTemplate,
@@ -619,7 +621,7 @@ function resolveParentMetadataValues(
   }
   if (metadata.title != null) {
     resolved.title = {
-      absolute: resolveStringTitle(metadata.title),
+      absolute: resolveStringTitle(metadata.title) ?? "",
       template: typeof metadata.title === "object" ? (metadata.title.template ?? null) : null,
     };
   }

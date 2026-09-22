@@ -9,6 +9,39 @@ import {
 // Ported from Next.js: test/e2e/app-dir/metadata/metadata.test.ts
 // https://github.com/vercel/next.js/blob/v16.2.6/test/e2e/app-dir/metadata/metadata.test.ts
 describe("generateMetadata parent values", () => {
+  it("exposes template-only layout titles without changing the rendered page title", async () => {
+    const result = await resolveAppPageHead<Record<string, unknown>>({
+      layoutModules: [{ metadata: { title: { template: "%s | Acme" } } }],
+      metadataRoutes: [],
+      pageModule: {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          const parent = await resolving;
+          expect(parent.title).toEqual({ absolute: "", template: "%s | Acme" });
+          return { title: "Article" };
+        },
+      },
+      params: {},
+      routePath: "/article",
+      routeSegments: ["article"],
+    });
+    expect(result.metadata?.title).toBe("Article | Acme");
+    expect(renderMetadataToHtml(result.metadata!)).toContain("<title>Article | Acme</title>");
+  });
+
+  it("normalizes a direct template-only parent title with an empty absolute", async () => {
+    await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          expect((await resolving).title).toEqual({ absolute: "", template: "%s | Acme" });
+          return {};
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve({ title: { template: "%s | Acme" } }),
+    );
+  });
+
   it("exposes a plain leaf title without its ancestor template while rendering the page", async () => {
     let parentTitle: unknown;
     const result = await resolveAppPageHead<Record<string, unknown>>({
