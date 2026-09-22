@@ -224,9 +224,9 @@ export type Metadata = {
   manifest?: string | URL;
   alternates?: {
     canonical?: string | URL | AlternateLinkDescriptor | null;
-    languages?: Record<string, AlternateLinkValue>;
-    media?: Record<string, AlternateLinkValue>;
-    types?: Record<string, AlternateLinkValue>;
+    languages?: Record<string, AlternateLinkValue> | null;
+    media?: Record<string, AlternateLinkValue> | null;
+    types?: Record<string, AlternateLinkValue> | null;
   };
   verification?: {
     google?: string;
@@ -668,7 +668,10 @@ function resolveParentAlternates(
   };
   for (const key of ["languages", "media", "types"] as const) {
     const values = alternates[key];
-    if (!values) continue;
+    if (!values) {
+      resolved[key] = null;
+      continue;
+    }
     resolved[key] = Object.fromEntries(
       Object.entries(values).flatMap(([name, value]) => {
         if (!value || (Array.isArray(value) && value.length === 0)) return [];

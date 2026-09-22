@@ -350,6 +350,30 @@ describe("generateMetadata parent values", () => {
     expect(parent.alternates.languages.en).toBe("./en");
   });
 
+  it("exposes null alternate maps when an ancestor only supplies a canonical URL", async () => {
+    await resolveModuleMetadata(
+      {
+        async generateMetadata(_props: unknown, resolving: Promise<Metadata>) {
+          expect((await resolving).alternates).toEqual({
+            canonical: { url: "https://example.com/article" },
+            languages: null,
+            media: null,
+            types: null,
+          });
+          return {};
+        },
+      },
+      {},
+      undefined,
+      Promise.resolve({
+        metadataBase: new URL("https://example.com"),
+        alternates: { canonical: "./" },
+      }),
+      undefined,
+      "/article",
+    );
+  });
+
   it("keeps the base from the layout that declared inherited alternates", async () => {
     const result = await resolveAppPageHead<Record<string, unknown>>({
       layoutModules: [
