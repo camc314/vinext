@@ -825,7 +825,21 @@ function prepareAppPageHeadInner<TModule extends AppPageHeadModule>(
     // Reference: https://github.com/vercel/next.js/blob/canary/packages/next/src/lib/metadata/resolve-metadata.ts
     const primaryPageHasTitle = pageMetadata != null && pageMetadata.title !== undefined;
     const metadataEntries: MetadataMergeEntry[] = [
-      ...layoutMetadataResults.filter(isPresent).map((entry) => ({ metadata: entry })),
+      ...layoutMetadataResults.flatMap((metadata, index) =>
+        metadata
+          ? [
+              {
+                metadata,
+                // A layout template applies to descendant route segments, never the
+                // page sharing that layout's segment. Keep absent source positions
+                // compatible with callers that supply only an ordered module list.
+                contributesTitleTemplate:
+                  options.routeSegments === undefined ||
+                  layoutInputs[index].treePosition < routeSegments.length,
+              },
+            ]
+          : [],
+      ),
       ...(pageMetadata ? [{ isPage: true, metadata: pageMetadata }] : []),
       ...parallelMetadataResults
         .filter(isPresent)

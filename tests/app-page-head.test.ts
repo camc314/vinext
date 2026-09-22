@@ -8,6 +8,37 @@ import {
 import type { AppPageParams } from "../packages/vinext/src/server/app-page-boundary.js";
 
 describe("app page head resolution", () => {
+  // Ported from Next.js: test/e2e/app-dir/metadata/metadata.test.ts
+  // https://github.com/vercel/next.js/blob/v16.2.6/test/e2e/app-dir/metadata/metadata.test.ts
+  it.each([
+    { segments: ["title-template"], positions: [0, 1], expected: "Page" },
+    { segments: ["title-template", "extra"], positions: [0, 1, 2], expected: "Page | Layout" },
+    {
+      segments: ["title-template", "extra", "inner"],
+      positions: [0, 1, 2],
+      expected: "Page | Extra Layout",
+    },
+  ])(
+    "only inherits title templates from ancestor segments: $segments",
+    async ({ segments, positions, expected }) => {
+      const layouts = [
+        {},
+        { metadata: { title: { template: "%s | Layout", default: "Layout" } } },
+        { metadata: { title: { template: "%s | Extra Layout", default: "Extra Layout" } } },
+      ].slice(0, positions.length);
+      const result = await resolveAppPageHead<Record<string, unknown>>({
+        layoutModules: layouts,
+        layoutTreePositions: positions,
+        metadataRoutes: [],
+        pageModule: { metadata: { title: "Page" } },
+        params: {},
+        routePath: "/" + segments.join("/"),
+        routeSegments: segments,
+      });
+      expect(result.metadata?.title).toBe(expected);
+    },
+  );
+
   it("prepares viewport independently while generated metadata is pending", async () => {
     // Ported from Next.js: test/e2e/app-dir/metadata-streaming/metadata-streaming.test.ts
     // https://github.com/vercel/next.js/blob/v16.2.7/test/e2e/app-dir/metadata-streaming/metadata-streaming.test.ts
